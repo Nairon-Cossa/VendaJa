@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* O Tailwind v4 já inclui base, components e utilities automaticamente com o import acima */
+
+@layer base {
+  body {
+    @apply antialiased text-slate-900 bg-[#F8FAFC];
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* REGRAS DE IMPRESSÃO */
+@media print {
+  nav, .no-print, button, input {
+    display: none !important;
+  }
+  body { background: white !important; }
+  #area-impressao {
+    position: absolute;
+    top: 0;
+    width: 100%;
+  }
+}
