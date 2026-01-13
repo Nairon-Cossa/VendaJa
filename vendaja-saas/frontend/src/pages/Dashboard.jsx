@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-import { 
-  TrendingUp, Package, DollarSign, 
+import {
+  TrendingUp, Package, DollarSign,
   ArrowUpRight, ShoppingBag, Clock, Activity, ListOrdered, ChevronRight, RefreshCw, CheckCircle2
 } from 'lucide-react';
 
@@ -33,7 +33,7 @@ const Dashboard = ({ produtos, usuario, avisar }) => {
     // O estado inicial já cobre o carregamento inicial.
 
     const q = query(
-      collection(db, "vendas"), 
+      collection(db, "vendas"),
       where("lojaId", "==", usuario.uid),
       orderBy("data", "desc")
     );
@@ -66,7 +66,7 @@ const Dashboard = ({ produtos, usuario, avisar }) => {
     const totalHistorico = vendas.reduce((acc, v) => acc + Number(v.total || 0), 0);
     const vendasHojeLista = vendas.filter(v => {
       if (!v.data) return false;
-      const dataVenda = v.data.toDate ? v.data.toDate() : new Date(v.data);
+      const dataVenda = typeof v.data.toDate === 'function' ? v.data.toDate() : new Date(v.data);
       return dataVenda.toLocaleDateString() === hoje;
     });
     
@@ -76,13 +76,15 @@ const Dashboard = ({ produtos, usuario, avisar }) => {
     vendas.forEach(v => {
       v.itens?.forEach(item => {
         const prodOriginal = produtos.find(p => p.id === item.id);
-        const custoUnitario = prodOriginal?.custo || 0;
-        lucroTotal += (Number(item.preco) - Number(custoUnitario)) * item.qtd;
+        const custoUnitario = Number(prodOriginal?.custo) || 0;
+        const preco = Number(item.preco) || 0;
+        const qtd = Number(item.qtd) || 0;
+        lucroTotal += (preco - custoUnitario) * qtd;
       });
     });
 
     const meusProdutos = produtos.filter(p => p.lojaId === usuario?.uid);
-    const produtosCriticos = meusProdutos.filter(p => Number(p.stock) <= 15);
+    const produtosCriticos = meusProdutos.filter(p => Number(p.stock ?? 0) <= 15);
 
     let saude = 100;
     if (produtosCriticos.length > 0) saude -= (produtosCriticos.length * 2);
