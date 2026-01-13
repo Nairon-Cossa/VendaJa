@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { db } from '../firebase'; 
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
@@ -29,8 +29,9 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const inputPesquisa = useRef(null);
   const config = REGRAS_SETOR[usuario.tipoNegocio] || REGRAS_SETOR['Mercearia'];
 
+  // Filtro local de produtos
   const produtosDaLoja = produtos.filter(p => 
-    p.lojaId === usuario.lojaId && 
+    p.lojaId === usuario.uid && 
     (p.nome.toLowerCase().includes(pesquisa.toLowerCase()) || 
      (p.referencia && p.referencia.toLowerCase().includes(pesquisa.toLowerCase())))
   );
@@ -47,7 +48,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
     } else {
       setCarrinho([...carrinho, { ...p, qtd: 1 }]);
     }
-    setPesquisa(''); // Limpa pesquisa ao adicionar
+    setPesquisa(''); 
   };
 
   const removerOuDiminuir = (id) => {
@@ -61,15 +62,22 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
 
   const finalizarVenda = async () => {
     if (carrinho.length === 0 || carregando) return;
+    
+    if (!usuario?.uid) {
+      avisar("ERRO DE AUTENTICAÇÃO: RECARREGUE A PÁGINA", "erro");
+      return;
+    }
+
     setCarregando(true);
     const batch = writeBatch(db);
     
     try {
       const totalVenda = carrinho.reduce((acc, i) => acc + (Number(i.preco) * i.qtd), 0);
       const vendaRef = doc(collection(db, "vendas"));
+      
       const dadosVenda = {
         id: vendaRef.id,
-        lojaId: usuario.lojaId,
+        lojaId: usuario.uid, 
         vendedorId: usuario.uid,
         vendedorNome: usuario.nome,
         lojaNome: usuario.nomeLoja,
@@ -96,16 +104,20 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
       };
 
       batch.set(vendaRef, dadosVenda);
+
       carrinho.forEach(item => {
         const produtoRef = doc(db, "produtos", item.id);
         batch.update(produtoRef, { stock: increment(-item.qtd) });
       });
 
       await batch.commit();
+      
       setVendaFinalizada(dadosVenda);
       avisar("VENDA REGISTADA COM SUCESSO!", "sucesso");
+
     } catch (error) {
-      avisar("FALHA AO CONECTAR AO SERVIDOR", "erro");
+      console.error("Erro detalhado ao finalizar venda:", error);
+      avisar("ERRO DE PERMISSÃO: VERIFIQUE O REGISTO DO PRODUTO", "erro");
     } finally {
       setCarregando(false);
     }
@@ -179,7 +191,6 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
             />
           </div>
 
-          {/* MÉTODOS DE PAGAMENTO MELHORADOS */}
           <div className="space-y-2">
              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Forma de Pagamento</label>
              <div className="grid grid-cols-2 gap-2">
@@ -222,7 +233,6 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           </div>
         </div>
 
-        {/* PAINEL DE PAGAMENTO - DARK MODE STYLE */}
         <div className="p-8 bg-slate-900 rounded-t-[3.5rem] space-y-6 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
           <div className="flex justify-between items-center">
             <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Total Global</span>
