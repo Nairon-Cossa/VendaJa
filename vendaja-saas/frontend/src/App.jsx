@@ -86,24 +86,24 @@ function App() {
 
   // 3. Sincronizar Configurações da Loja
   useEffect(() => {
-    if (!usuario?.lojaId || usuario.status !== 'ativo') return;
-    const unsubConfig = onSnapshot(doc(db, "configuracoes", usuario.lojaId), (docSnap) => {
+    if (!usuario?.uid || usuario.status !== 'ativo') return;
+    const unsubConfig = onSnapshot(doc(db, "configuracoes", usuario.uid), (docSnap) => {
       if (docSnap.exists()) {
         setConfigLoja(docSnap.data());
       }
     });
     return () => unsubConfig();
-  }, [usuario?.lojaId, usuario?.status]);
+  }, [usuario?.uid, usuario?.status]);
 
   // 4. Sincronizar Inventário
   useEffect(() => {
-    if (!usuario?.lojaId || usuario.status !== 'ativo') return;
-    const q = query(collection(db, "produtos"), where("lojaId", "==", usuario.lojaId));
+    if (!usuario?.uid || usuario.status !== 'ativo') return;
+    const q = query(collection(db, "produtos"), where("lojaId", "==", usuario.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setProdutos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
     return () => unsubscribe(); 
-  }, [usuario?.lojaId, usuario?.status]);
+  }, [usuario?.uid, usuario?.status]);
 
   const fazerLogin = (dados) => {
     setUsuario(dados);
@@ -222,4 +222,4 @@ function App() {
   );
 }
 
-export default App;
+export default App; 

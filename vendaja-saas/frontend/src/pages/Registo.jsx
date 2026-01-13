@@ -106,7 +106,7 @@ const Registo = ({ setUsuario }) => {
         urlFinalLogo = await getDownloadURL(uploadSnapshot.ref);
       }
 
-      const lojaId = `VENDA_${Math.random().toString(36).substr(2, 7).toUpperCase()}`;
+      const lojaId = user.uid; // FIX: Use auth UID instead of random custom ID
 
       await setDoc(doc(db, "usuarios", user.uid), {
         uid: user.uid,
