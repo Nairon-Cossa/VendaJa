@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Store, Utensils, Beer, Pill, Smartphone, 
-  Shirt, ArrowRight, ArrowLeft, CheckCircle2, 
+  Shirt, ArrowLeft, CheckCircle2, 
   Mail, Loader2, Sparkles, ShieldAlert, ImagePlus, KeyRound, Briefcase, ChevronRight,
-  MessageCircle // Ícone do WhatsApp
+  MessageCircle 
 } from 'lucide-react';
 import { auth, db, storage } from '../firebase';
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useNavigate } from 'react-router-dom'; // Adicionado para navegação
 import emailjs from '@emailjs/browser';
 
 const TIPOS_NEGOCIO = [
@@ -21,7 +22,8 @@ const TIPOS_NEGOCIO = [
   { id: 'Geral/Loja', label: 'Outro tipo de Loja', icon: <Briefcase size={20} />, color: 'bg-slate-500' },
 ];
 
-const Registo = ({ setUsuario }) => {
+const Registo = () => { // Removido setUsuario pois a conta fica pendente
+  const navigate = useNavigate();
   const [passo, setPasso] = useState(1);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -106,7 +108,7 @@ const Registo = ({ setUsuario }) => {
         urlFinalLogo = await getDownloadURL(uploadSnapshot.ref);
       }
 
-      const lojaId = user.uid; // FIX: Use auth UID instead of random custom ID
+      const lojaId = user.uid;
 
       await setDoc(doc(db, "usuarios", user.uid), {
         uid: user.uid,
@@ -117,7 +119,7 @@ const Registo = ({ setUsuario }) => {
         tipoNegocio: dados.tipoNegocio,
         role: 'admin',
         lojaId: lojaId,
-        status: 'pendente', // IMPORTANTE: Criado como pendente para aprovação
+        status: 'pendente', 
         criadoEm: serverTimestamp()
       });
 
@@ -131,8 +133,9 @@ const Registo = ({ setUsuario }) => {
         criadoEm: serverTimestamp()
       });
 
+      // Importante: Deslogar imediatamente para que o App.js não tente entrar na Dashboard
+      await signOut(auth);
       setSucessoVerificacao(true);
-      // Não definimos o usuário aqui para não entrar no sistema automaticamente
       
     } catch (error) {
       console.error("Erro no Processo:", error);
@@ -168,7 +171,7 @@ const Registo = ({ setUsuario }) => {
 
           <div className="space-y-3">
             <a 
-              href={`https://wa.me/258842721864?text=${msgWhatsapp}`} // Coloca o teu número aqui
+              href={`https://wa.me/258842721864?text=${msgWhatsapp}`} 
               target="_blank" 
               rel="noreferrer"
               className="w-full bg-[#25D366] text-white py-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] hover:brightness-110 transition-all shadow-xl flex items-center justify-center gap-3"
@@ -176,14 +179,12 @@ const Registo = ({ setUsuario }) => {
               <MessageCircle size={18} /> Mandar Comprovativo
             </a>
             
+            {/* BOTÃO CORRIGIDO: Agora leva para o Login em vez de voltar para o Registo */}
             <button 
-                onClick={() => {
-                    signOut(auth);
-                    window.location.reload();
-                }} 
-                className="text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-red-500 transition-colors"
+                onClick={() => navigate('/login')} 
+                className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-colors flex items-center justify-center gap-2 mx-auto"
             >
-                Sair e Entrar Depois
+               <ArrowLeft size={14} /> Voltar para o Login
             </button>
           </div>
         </div>
@@ -237,7 +238,7 @@ const Registo = ({ setUsuario }) => {
           {passo === 1 && (
             <div className="animate-in fade-in slide-in-from-right-10 duration-500">
               <header className="mb-10">
-                <h3 className="text-3xl font-black text-slate-900 italic uppercase tracking-tighter text-balance">Qual o seu ramo de negócio?</h3>
+                <h3 className="text-3xl font-black text-slate-900 italic uppercase tracking-tighter">Qual o seu ramo de negócio?</h3>
                 <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-2">Escolha a categoria que melhor define a sua loja.</p>
               </header>
 
@@ -263,41 +264,43 @@ const Registo = ({ setUsuario }) => {
               <button onClick={proximoPasso} className="w-full mt-10 bg-slate-900 text-white py-6 rounded-[2.5rem] font-black flex items-center justify-center gap-4 uppercase text-[10px] tracking-[0.2em] shadow-2xl hover:bg-blue-600 transition-all active:scale-95">
                 Próximo Passo <ChevronRight size={18} />
               </button>
+              
+              <button onClick={() => navigate('/login')} className="w-full mt-4 text-[9px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-colors">
+                Já tenho uma conta
+              </button>
             </div>
           )}
 
           {passo === 2 && (
             <form onSubmit={iniciarVerificacao} className="animate-in fade-in slide-in-from-right-10 duration-500 space-y-5">
-              <button type="button" onClick={() => setPasso(1)} className="text-slate-400 hover:text-blue-600 flex items-center gap-2 text-[9px] font-black uppercase mb-6 transition-colors font-bold">
+              <button type="button" onClick={() => setPasso(1)} className="text-slate-400 hover:text-blue-600 flex items-center gap-2 text-[9px] font-black uppercase mb-6 transition-colors">
                 <ArrowLeft size={14} /> Voltar ao sector
               </button>
 
               <div className="bg-slate-50 p-6 rounded-[3rem] border-2 border-dashed border-slate-200 hover:border-blue-300 transition-colors group">
                 <label className="flex items-center gap-6 cursor-pointer">
-                   <div className="w-20 h-20 bg-white rounded-[1.8rem] flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm group-hover:shadow-md transition-all">
+                    <div className="w-20 h-20 bg-white rounded-[1.8rem] flex items-center justify-center overflow-hidden border border-slate-100 shadow-sm transition-all">
                       {previewUrl ? <img src={previewUrl} className="w-full h-full object-cover" alt="Preview" /> : <ImagePlus className="text-slate-300" size={28} />}
-                   </div>
-                   <div className="flex flex-col gap-1">
-                     <span className="text-[10px] font-black uppercase text-slate-800 tracking-widest">Logotipo da Loja</span>
-                     <span className="text-[9px] font-medium text-slate-400">JPG ou PNG até 2MB.</span>
-                   </div>
-                   <input type="file" className="hidden" accept="image/*" onChange={lidarComImagem} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-black uppercase text-slate-800 tracking-widest">Logotipo da Loja</span>
+                      <span className="text-[9px] font-medium text-slate-400">JPG ou PNG até 2MB.</span>
+                    </div>
+                    <input type="file" className="hidden" accept="image/*" onChange={lidarComImagem} />
                 </label>
               </div>
 
               <div className="space-y-4">
                 <input required className="w-full bg-slate-50 p-6 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-600/10 focus:bg-white font-bold text-sm transition-all shadow-sm" placeholder="Nome do Estabelecimento" value={dados.nomeLoja} onChange={e => setDados({...dados, nomeLoja: e.target.value})} />
-                
                 <div className="grid grid-cols-2 gap-4">
                   <input required className="w-full bg-slate-50 p-6 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-600/10 focus:bg-white font-bold text-sm transition-all shadow-sm" placeholder="Seu Nome" value={dados.nome} onChange={e => setDados({...dados, nome: e.target.value})} />
                   <input required className="w-full bg-slate-50 p-6 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-600/10 focus:bg-white font-bold text-sm transition-all shadow-sm" placeholder="Telemóvel" value={dados.telemovel} onChange={e => setDados({...dados, telemovel: e.target.value})} />
                 </div>
-
                 <input required type="email" className="w-full bg-slate-50 p-6 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-600/10 focus:bg-white font-bold text-sm transition-all shadow-sm" placeholder="Email Corporativo" value={dados.email} onChange={e => setDados({...dados, email: e.target.value})} />
                 <input required type="password" className="w-full bg-slate-50 p-6 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-600/10 focus:bg-white font-bold text-sm transition-all shadow-sm" placeholder="Criar Senha de Acesso" value={dados.senha} onChange={e => setDados({...dados, senha: e.target.value})} />
               </div>
 
-              <button type="submit" disabled={carregando} className="w-full bg-blue-600 text-white py-7 rounded-[2.5rem] font-black flex items-center justify-center gap-4 uppercase text-[10px] tracking-[0.2em] shadow-2xl hover:bg-slate-900 transition-all active:scale-95 disabled:opacity-50 mt-4">
+              <button type="submit" disabled={carregando} className="w-full bg-blue-600 text-white py-7 rounded-[2.5rem] font-black flex items-center justify-center gap-4 uppercase text-[10px] tracking-[0.2em] shadow-2xl hover:bg-slate-900 transition-all active:scale-95 disabled:opacity-50">
                 {carregando ? <Loader2 className="animate-spin" /> : <><Mail size={18} /> Validar e Continuar</>}
               </button>
             </form>
@@ -306,21 +309,18 @@ const Registo = ({ setUsuario }) => {
           {passo === 3 && (
             <div className="animate-in zoom-in duration-500 space-y-10 text-center max-w-sm mx-auto">
               <div className="w-24 h-24 bg-blue-50 text-blue-600 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-inner"><KeyRound size={40} /></div>
-              
               <div>
                 <h3 className="text-2xl font-black text-slate-900 italic uppercase tracking-tighter">Código de Segurança</h3>
-                <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mt-2 leading-relaxed">Enviámos um PIN de 6 dígitos para o e-mail informado.</p>
+                <p className="text-slate-400 text-[9px] font-black uppercase tracking-widest mt-2">Enviámos um PIN de 6 dígitos para o e-mail informado.</p>
               </div>
-
               <input 
                 type="text" 
                 maxLength="6" 
                 value={otpInput} 
                 onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
-                className="w-full bg-slate-50 p-8 text-center text-5xl font-black tracking-[0.5em] rounded-[3rem] border-2 border-transparent focus:border-blue-600 outline-none text-slate-900 shadow-inner" 
+                className="w-full bg-slate-50 p-8 text-center text-5xl font-black tracking-[0.5em] rounded-[3rem] border-2 border-transparent focus:border-blue-600 outline-none shadow-inner" 
                 placeholder="000000" 
               />
-
               <div className="space-y-4">
                 <button 
                   onClick={finalizarRegistoFinal} 
