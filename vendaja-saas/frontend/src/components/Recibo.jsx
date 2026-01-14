@@ -1,5 +1,5 @@
 import React from 'react';
-import { Printer, X, CheckCircle, Store } from 'lucide-react';
+import { Printer, X, CheckCircle, Store, Hash } from 'lucide-react'; // Adicionei Hash icon
 
 const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) => {
   
@@ -7,7 +7,6 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
     window.print();
   };
 
-  // Ajuste para garantir que pegamos o logo correto (no Caixa enviamos como 'logo')
   const logoExibir = venda.configRecibo?.logo || configLoja.logoUrl || configLoja.logo;
 
   return (
@@ -76,7 +75,6 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
             <span>Hora: {new Date(venda.data).toLocaleTimeString()}</span>
           </div>
           <div className="flex justify-between border-t border-slate-50 pt-1.5 mt-1.5 text-slate-900">
-            {/* Ajustado: de venda.vendedor para venda.vendedorNome conforme o Caixa.jsx */}
             <span>Vendedor: {venda.vendedorNome || 'Sistema'}</span>
             <span className="bg-blue-50 px-1.5 rounded text-blue-700">Ref: {venda.infoAdicional || 'BALCÃO'}</span>
           </div>
@@ -102,7 +100,7 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
           </tbody>
         </table>
 
-        {/* TOTAIS */}
+        {/* TOTAIS E PAGAMENTO - AQUI ESTÁ O UPDATE PARA O TEU PROBLEMA */}
         <div className="space-y-2 border-t-2 border-slate-900 pt-4 mb-8">
           <div className="flex justify-between items-end">
             <span className="text-sm font-black uppercase italic text-slate-900">Total Pago</span>
@@ -112,11 +110,18 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
           </div>
           
           <div className="flex justify-between text-[10px] font-black text-blue-600 uppercase pt-2">
-            <span>Método de Pagamento:</span>
+            <span>Forma de Pagamento:</span>
             <span className="bg-blue-50 px-2 py-0.5 rounded">{venda.metodo}</span>
           </div>
 
-          {/* Adicionado Troco para ser completo */}
+          {/* NOVO: MOSTRA A REFERÊNCIA DO SMS SE EXISTIR (RESOLVE O TEU PROBLEMA) */}
+          {venda.referencia && (
+            <div className="flex justify-between text-[10px] font-black text-red-600 uppercase border-y border-dashed border-red-100 py-2 my-1">
+              <span className="flex items-center gap-1"><Hash size={10}/> Ref. Transação:</span>
+              <span className="font-mono">{venda.referencia}</span>
+            </div>
+          )}
+
           {venda.troco > 0 && (
             <div className="flex justify-between text-[10px] font-black text-emerald-600 uppercase pt-1">
               <span>Troco:</span>
@@ -137,9 +142,7 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
           
           <div className="pt-6 border-t border-dashed border-slate-100 flex flex-col items-center gap-2">
             <div className="flex items-center gap-1.5 opacity-80">
-                <div className="w-5 h-5 bg-slate-950 rounded-lg flex items-center justify-center text-white font-bold text-[8px]">
-                   VJ
-                </div>
+                <div className="w-5 h-5 bg-slate-950 rounded-lg flex items-center justify-center text-white font-bold text-[8px]">VJ</div>
                 <span className="text-[10px] font-black italic text-slate-900 uppercase tracking-tighter">VendaJá <span className="text-blue-600">Pro</span></span>
             </div>
             <p className="text-[7px] font-black text-slate-300 uppercase tracking-[0.4em]">
