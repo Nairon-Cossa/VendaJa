@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { db, auth } from './firebase'; 
 import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth'; 
-import { ShieldAlert, MessageCircle, LogOut, MailCheck, Clock } from 'lucide-react';
+import { ShieldAlert, MessageCircle, LogOut, Clock } from 'lucide-react';
 
 // Páginas e Componentes
 import Dashboard from './pages/Dashboard';
@@ -16,9 +16,43 @@ import Definicoes from './pages/Definicoes';
 import Historico from './pages/Historico';
 import Equipa from './pages/Equipa';
 import SuperAdmin from './pages/SuperAdmin';
-import Fiados from './pages/Fiados'; // Importado novo componente
+import Fiados from './pages/Fiados'; 
+import LojaPublica from './pages/LojaPublica'; 
 import Navbar from './components/Navbar';
 import FechoCaixa from './components/FechoCaixa';
+
+// --- COMPONENTE MOVIDO PARA FORA DO APP (CORREÇÃO ESLINT) ---
+const TelaBloqueio = ({ usuario, fazerLogout, MEU_WHATSAPP }) => {
+  const isPendente = usuario?.status === 'pendente';
+  const msgWhatsapp = encodeURIComponent(`Olá Nairon! Sou o ${usuario?.nome} da loja ${usuario?.nomeLoja}. Gostaria de ativar o meu acesso ao venda-japro.vercel.app.`);
+
+  return (
+    <div className="h-screen bg-[#F1F5F9] flex flex-col items-center justify-center p-6 text-center">
+      <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl shadow-slate-200 border border-slate-100 max-w-md w-full animate-in fade-in zoom-in duration-500">
+        <div className={`w-24 h-24 ${isPendente ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-500'} rounded-[2.5rem] flex items-center justify-center mb-8 mx-auto shadow-inner`}>
+          {isPendente ? <Clock size={48} className="animate-pulse" /> : <ShieldAlert size={48} />}
+        </div>
+        <h1 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-tight">
+          {isPendente ? "Aguardando Ativação" : "Acesso Restrito"}
+        </h1>
+        <p className="text-slate-400 mt-4 font-bold text-[11px] leading-relaxed uppercase tracking-widest">
+          {isPendente 
+            ? "A tua conta foi criada com sucesso! Para começar a gerir o teu negócio, envia o comprovativo de pagamento para o nosso suporte."
+            : "Esta unidade encontra-se suspensa por falta de pagamento ou violação dos termos de uso no venda-japro.vercel.app."}
+        </p>
+        <div className="mt-10 space-y-4">
+          <a href={`https://wa.me/${MEU_WHATSAPP}?text=${msgWhatsapp}`} target="_blank" rel="noopener noreferrer" className="w-full bg-[#25D366] text-white p-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] hover:brightness-110 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3">
+            <MessageCircle size={20} /> Enviar Comprovativo
+          </a>
+          <button onClick={fazerLogout} className="w-full text-slate-400 font-black text-[10px] uppercase p-4 hover:text-red-500 transition-colors flex items-center justify-center gap-2">
+            <LogOut size={16} /> Sair da Conta
+          </button>
+        </div>
+        <p className="mt-8 text-[9px] font-bold text-slate-300 uppercase tracking-widest">ID da Loja: {usuario?.uid}</p>
+      </div>
+    </div>
+  );
+};
 
 function App() {
   const [usuario, setUsuario] = useState(() => {
@@ -32,8 +66,20 @@ function App() {
   const [carregando, setCarregando] = useState(true);
 
   const MEU_WHATSAPP = "258878296706";
+
+  const fazerLogout = useCallback(() => {
+    setUsuario(null);
+    setProdutos([]);
+    localStorage.removeItem('vendaJa_sessao');
+    auth.signOut();
+  }, []);
+
+  const fazerLogin = (dados) => {
+    setUsuario(dados);
+    localStorage.setItem('vendaJa_sessao', JSON.stringify(dados));
+  };
+
   const isSuperAdmin = usuario?.email === "naironcossa.dev@gmail.com" || usuario?.role === 'superadmin';
-  // Lógica para verificar se o utilizador tem acesso a funções pagas
   const isPremium = usuario?.plano === 'premium' || isSuperAdmin;
 
   const [configLoja, setConfigLoja] = useState({
@@ -56,19 +102,18 @@ function App() {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        setUsuario(null);
-        localStorage.removeItem('vendaJa_sessao');
-      }
+      if (!user) fazerLogout();
     });
     return () => unsubscribeAuth();
-  }, []);
+  }, [fazerLogout]);
 
   useEffect(() => {
     if (!usuario?.uid) {
-      setCarregando(false);
-      return;
+      // Pequeno timeout para evitar renderização em cascata síncrona
+      const timer = setTimeout(() => setCarregando(false), 0);
+      return () => clearTimeout(timer);
     }
+    
     const unsubUser = onSnapshot(doc(db, "usuarios", usuario.uid), (docSnap) => {
       if (docSnap.exists()) {
         const novosDados = { ...docSnap.data(), uid: docSnap.id };
@@ -82,8 +127,9 @@ function App() {
       console.error("Erro ao sincronizar usuário:", error);
       setCarregando(false);
     });
+    
     return () => unsubUser();
-  }, [usuario?.uid]);
+  }, [usuario?.uid, fazerLogout]);
 
   useEffect(() => {
     if (!usuario?.uid || usuario.status !== 'ativo') return;
@@ -104,50 +150,6 @@ function App() {
     return () => unsubscribe(); 
   }, [usuario?.uid, usuario?.status]);
 
-  const fazerLogin = (dados) => {
-    setUsuario(dados);
-    localStorage.setItem('vendaJa_sessao', JSON.stringify(dados));
-  };
-
-  const fazerLogout = () => {
-    setUsuario(null);
-    setProdutos([]);
-    localStorage.removeItem('vendaJa_sessao');
-    auth.signOut();
-  };
-
-  const TelaBloqueio = () => {
-    const isPendente = usuario?.status === 'pendente';
-    const msgWhatsapp = encodeURIComponent(`Olá Nairon! Sou o ${usuario?.nome} da loja ${usuario?.nomeLoja}. Gostaria de ativar o meu acesso ao VendaJá PRO.`);
-
-    return (
-      <div className="h-screen bg-[#F1F5F9] flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl shadow-slate-200 border border-slate-100 max-w-md w-full animate-in fade-in zoom-in duration-500">
-          <div className={`w-24 h-24 ${isPendente ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-500'} rounded-[2.5rem] flex items-center justify-center mb-8 mx-auto shadow-inner`}>
-            {isPendente ? <Clock size={48} className="animate-pulse" /> : <ShieldAlert size={48} />}
-          </div>
-          <h1 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-tight">
-            {isPendente ? "Aguardando Ativação" : "Acesso Restrito"}
-          </h1>
-          <p className="text-slate-400 mt-4 font-bold text-[11px] leading-relaxed uppercase tracking-widest">
-            {isPendente 
-              ? "A tua conta foi criada com sucesso! Para começar a gerir o teu negócio, envia o comprovativo de pagamento para o nosso suporte."
-              : "Esta unidade encontra-se suspensa por falta de pagamento ou violação dos termos de uso."}
-          </p>
-          <div className="mt-10 space-y-4">
-            <a href={`https://wa.me/${MEU_WHATSAPP}?text=${msgWhatsapp}`} target="_blank" rel="noopener noreferrer" className="w-full bg-[#25D366] text-white p-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] hover:brightness-110 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3">
-              <MessageCircle size={20} /> Enviar Comprovativo
-            </a>
-            <button onClick={fazerLogout} className="w-full text-slate-400 font-black text-[10px] uppercase p-4 hover:text-red-500 transition-colors flex items-center justify-center gap-2">
-              <LogOut size={16} /> Sair da Conta
-            </button>
-          </div>
-          <p className="mt-8 text-[9px] font-bold text-slate-300 uppercase tracking-widest">ID da Loja: {usuario?.lojaId}</p>
-        </div>
-      </div>
-    );
-  };
-
   if (carregando) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-white">
@@ -160,46 +162,45 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
-        {usuario && (usuario.status === 'ativo' || isSuperAdmin) && (
-          <Navbar usuario={usuario} fazerLogout={fazerLogout} isOnline={isOnline} abrirFecho={() => setMostrarFecho(true)} />
-        )}
+        <Routes>
+          <Route path="/loja/:slug" element={<LojaPublica />} />
 
-        <main className={usuario && (usuario.status === 'ativo' || isSuperAdmin) ? "max-w-7xl mx-auto w-full p-6 md:p-8" : "w-full"}>
-          <Routes>
-            <Route path="/login" element={!usuario ? <Login aoLogar={fazerLogin} /> : (isSuperAdmin ? <Navigate to="/gestao-mestra" /> : <Navigate to="/" />)} />
-            <Route path="/registo" element={!usuario ? <Registo setUsuario={fazerLogin} /> : <Navigate to="/" />} />
-            <Route path="/recuperar-senha" element={<RecuperarSenha />} />
-            <Route path="/gestao-mestra" element={isSuperAdmin ? <SuperAdmin /> : <Navigate to="/login" />} />
+          <Route path="*" element={
+            <>
+              {usuario && (usuario.status === 'ativo' || isSuperAdmin) && (
+                <Navbar usuario={usuario} fazerLogout={fazerLogout} isOnline={isOnline} abrirFecho={() => setMostrarFecho(true)} />
+              )}
 
-            <Route path="/" element={
-              usuario ? (
-                isSuperAdmin ? <Navigate to="/gestao-mestra" /> : (
-                  usuario.status === 'ativo' ? (
-                    usuario.role === 'admin' ? <Dashboard produtos={produtos} usuario={usuario} /> : <Navigate to="/caixa" />
-                  ) : <TelaBloqueio />
-                )
-              ) : <Navigate to="/login" />
-            } />
-            
-            <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
-            <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
-            <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
-            <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
-            
-            {/* NOVA ROTA: Fiados (Apenas para Premium ou Admin) */}
-            <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) && isPremium ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+              <main className={usuario && (usuario.status === 'ativo' || isSuperAdmin) ? "max-w-7xl mx-auto w-full p-6 md:p-8" : "w-full"}>
+                <Routes>
+                  <Route path="/login" element={!usuario ? <Login aoLogar={fazerLogin} /> : (isSuperAdmin ? <Navigate to="/gestao-mestra" /> : <Navigate to="/" />)} />
+                  <Route path="/registo" element={!usuario ? <Registo setUsuario={fazerLogin} /> : <Navigate to="/" />} />
+                  <Route path="/recuperar-senha" element={<RecuperarSenha />} />
+                  <Route path="/gestao-mestra" element={isSuperAdmin ? <SuperAdmin /> : <Navigate to="/login" />} />
 
-            <Route path="/definicoes" element={
-              (usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' 
-              ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> 
-              : <Navigate to="/" />
-            } />
-
-            <Route path="*" element={<Navigate to={usuario ? (isSuperAdmin ? "/gestao-mestra" : "/") : "/login"} />} />
-          </Routes>
-        </main>
-
-        {mostrarFecho && <FechoCaixa usuario={usuario} fechar={() => setMostrarFecho(false)} />}
+                  <Route path="/" element={
+                    usuario ? (
+                      isSuperAdmin ? <Navigate to="/gestao-mestra" /> : (
+                        usuario.status === 'ativo' ? (
+                          usuario.role === 'admin' ? <Dashboard produtos={produtos} usuario={usuario} /> : <Navigate to="/caixa" />
+                        ) : <TelaBloqueio usuario={usuario} fazerLogout={fazerLogout} MEU_WHATSAPP={MEU_WHATSAPP} />
+                      )
+                    ) : <Navigate to="/login" />
+                  } />
+                  
+                  <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
+                  <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
+                  <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
+                  <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) && isPremium ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="*" element={<Navigate to={usuario ? (isSuperAdmin ? "/gestao-mestra" : "/") : "/login"} />} />
+                </Routes>
+              </main>
+              {mostrarFecho && <FechoCaixa usuario={usuario} fechar={() => setMostrarFecho(false)} />}
+            </>
+          } />
+        </Routes>
       </div>
     </Router>
   );

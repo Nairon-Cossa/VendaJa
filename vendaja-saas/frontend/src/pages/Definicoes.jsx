@@ -1,51 +1,73 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Settings, Store, MapPin, Hash, Phone, 
-  Save, Globe, Bell, ShieldCheck, CreditCard, Coins, Upload, Image as ImageIcon, X, Loader2, Crown, ExternalLink
-} from 'lucide-react';
+  Settings, Store, MapPin, Hash, Phone, Link as LinkIcon,
+  Save, Globe, Bell, ShieldCheck, CreditCard, Coins, Upload, Image as ImageIcon, X, Loader2, Crown, ExternalLink,
+  Truck, Wallet, Building2
+} from 'lucide-react'; // Corrigido para lucide-react
 import { db } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
 
 const Definicoes = ({ usuario, configLoja, avisar }) => {
-  const [dados, setDados] = useState(configLoja);
+  const [dados, setDados] = useState({
+    ...configLoja,
+    slugLoja: configLoja?.slugLoja || '',
+    fazEntrega: configLoja?.fazEntrega || false,
+    taxaEntrega: configLoja?.taxaEntrega || 0,
+    permiteLevantamento: configLoja?.permiteLevantamento !== undefined ? configLoja.permiteLevantamento : true,
+    aceitaMpesa: configLoja?.aceitaMpesa || false,
+    numeroMpesa: configLoja?.numeroMpesa || '',
+    nomeMpesa: configLoja?.nomeMpesa || '',
+    aceitaEmola: configLoja?.aceitaEmola || false,
+    numeroEmola: configLoja?.numeroEmola || '',
+    aceitaMkesh: configLoja?.aceitaMkesh || false,
+    numeroMkesh: configLoja?.numeroMkesh || '',
+    aceitaBanco: configLoja?.aceitaBanco || false,
+    dadosBancarios: configLoja?.dadosBancarios || ''
+  });
+
   const [carregandoImagem, setCarregandoImagem] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Verificação de plano
-  const isPremium = usuario?.plano === 'premium';
+  const isPremium = usuario?.plano === 'premium' || usuario?.role === 'superadmin';
 
   useEffect(() => {
-    setDados(configLoja);
+    if (configLoja) {
+      setDados(prev => ({ ...prev, ...configLoja }));
+    }
   }, [configLoja]);
+
+  // Formata o slug: remove espaços, acentos e caracteres especiais
+  const formatarSlug = (texto) => {
+    return texto
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+  };
 
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     setCarregandoImagem(true);
     const reader = new FileReader();
-
     reader.onload = (event) => {
       const img = new Image();
       img.src = event.target.result;
-
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const MAX_WIDTH = 400; 
         const scaleSize = MAX_WIDTH / img.width;
-        
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scaleSize;
-
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        
         setDados({ ...dados, logo: dataUrl });
         setCarregandoImagem(false);
-        avisar("IMAGEM PROCESSADA E OPTIMIZADA", "sucesso");
+        avisar("IMAGEM PROCESSADA", "sucesso");
       };
     };
     reader.readAsDataURL(file);
@@ -54,7 +76,6 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
   const salvarDefinicoes = async (e) => {
     e.preventDefault();
     setSalvando(true);
-    
     try {
       if (!dados.nuit || !dados.telefone || !dados.endereco) {
         avisar("NUIT, TELEFONE E ENDEREÇO SÃO OBRIGATÓRIOS", "info");
@@ -62,16 +83,21 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
         return;
       }
 
-      await setDoc(doc(db, "configuracoes", usuario.lojaId), {
+      // Se não for premium, o slug é limpo ou ignorado
+      const finalSlug = isPremium 
+        ? (dados.slugLoja ? formatarSlug(dados.slugLoja) : formatarSlug(usuario.nomeLoja))
+        : null;
+
+      await setDoc(doc(db, "configuracoes", usuario.uid), {
         ...dados,
-        slugLoja: isPremium ? (dados.slugLoja || usuario.nomeLoja?.toLowerCase().replace(/\s+/g, '-')) : null,
+        slugLoja: finalSlug,
         ultimaAtualizacao: new Date().toISOString()
       }, { merge: true });
 
-      avisar("DEFINIÇÕES SINCRONIZADAS NO CLOUD", "sucesso");
+      avisar("DEFINIÇÕES GUARDADAS", "sucesso");
     } catch (error) {
       console.error(error);
-      avisar("ERRO AO GUARDAR NO FIREBASE", "erro");
+      avisar("ERRO AO GUARDAR", "erro");
     } finally {
       setSalvando(false);
     }
@@ -91,190 +117,152 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
           </p>
         </div>
         <div className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg">
-          ID: {usuario.lojaId}
+          ID: {usuario.uid}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        
-        {/* LADO ESQUERDO: IDENTIDADE VISUAL */}
         <div className="lg:col-span-1 space-y-6">
+          {/* LOGOTIPO */}
           <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 text-center space-y-4">
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logotipo Oficial</p>
-            
             <div className="relative group mx-auto w-44 h-44">
               <div className="w-full h-full bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden transition-all group-hover:border-blue-400">
-                {carregandoImagem ? (
-                  <Loader2 size={32} className="animate-spin text-blue-500" />
-                ) : dados.logo ? (
-                  <img src={dados.logo} alt="Logo" className="w-full h-full object-contain p-4" />
-                ) : (
-                  <ImageIcon size={40} className="text-slate-300" />
-                )}
+                {carregandoImagem ? <Loader2 size={32} className="animate-spin text-blue-500" /> : dados.logo ? <img src={dados.logo} alt="Logo" className="w-full h-full object-contain p-4" /> : <ImageIcon size={40} className="text-slate-300" />}
               </div>
-              
-              <button 
-                type="button"
-                onClick={() => fileInputRef.current.click()}
-                className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all rounded-[2.5rem] flex items-center justify-center text-white flex-col gap-2 backdrop-blur-sm"
-              >
+              <button type="button" onClick={() => fileInputRef.current.click()} className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all rounded-[2.5rem] flex items-center justify-center text-white flex-col gap-2 backdrop-blur-sm">
                 <Upload size={20} />
                 <span className="text-[8px] font-black uppercase">Carregar Foto</span>
               </button>
-              
-              {dados.logo && !carregandoImagem && (
-                <button 
-                  type="button"
-                  onClick={() => setDados({...dados, logo: ''})}
-                  className="absolute -top-2 -right-2 bg-red-500 text-white p-2 rounded-full shadow-lg hover:scale-110 transition-all"
-                >
-                  <X size={12} />
-                </button>
-              )}
             </div>
-            
             <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
           </div>
 
-          {/* CARD PREMIUM PROMO / STATUS */}
-          {isPremium ? (
-            <div className="bg-slate-900 p-6 rounded-[2rem] border border-slate-800 text-white">
-               <div className="flex items-center gap-3 mb-4">
-                <Globe size={18} className="text-blue-400"/>
-                <span className="text-[10px] font-black uppercase">Loja Online Ativa</span>
+          {/* LINK DA LOJA (SLUG) */}
+          <div className={`p-8 rounded-[3rem] border shadow-sm transition-all ${isPremium ? 'bg-white border-slate-100' : 'bg-slate-50 border-transparent opacity-75'}`}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className={`p-2 rounded-lg ${isPremium ? 'bg-purple-50 text-purple-600' : 'bg-slate-200 text-slate-400'}`}>
+                <LinkIcon size={18} />
               </div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase mb-2">Seu link oficial:</p>
-              <div className="bg-slate-800 p-3 rounded-xl text-[10px] font-mono break-all text-blue-300 border border-slate-700">
-                vendaja.com/{dados.slugLoja || usuario.nomeLoja?.toLowerCase().replace(/\s+/g, '-')}
-              </div>
+              <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-sm">Link da Loja</h3>
             </div>
-          ) : (
-            <div className="bg-amber-50 p-6 rounded-[2rem] border border-amber-100">
-              <div className="flex items-center gap-3 mb-2">
-                <Crown size={18} className="text-amber-600"/>
-                <span className="text-[10px] font-black text-amber-900 uppercase">Upgrade para Premium</span>
+            
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[9px] font-black uppercase text-slate-400 ml-2">URL Personalizada</label>
+                <div className="flex flex-col gap-2">
+                  <input 
+                    disabled={!isPremium}
+                    className="w-full bg-slate-100 p-4 rounded-2xl outline-none border-2 border-transparent focus:border-purple-500 font-bold text-xs transition-all disabled:cursor-not-allowed"
+                    placeholder="ex: minha-loja"
+                    value={dados.slugLoja || ''}
+                    onChange={(e) => setDados({...dados, slugLoja: formatarSlug(e.target.value)})}
+                  />
+                </div>
               </div>
-              <p className="text-[9px] text-amber-700 font-medium leading-relaxed">Desbloqueie a sua loja online, catálogo digital e gestão de stock avançada.</p>
-              <button 
-                type="button"
-                onClick={() => window.open(`https://wa.me/258878296706?text=Upgrade+Premium+Loja+${usuario.nomeLoja}`, '_blank')}
-                className="mt-4 w-full bg-amber-600 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-widest"
-              >
-                Saber Mais
-              </button>
+
+              {isPremium ? (
+                <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
+                  <p className="text-[8px] text-slate-400 font-black uppercase mb-1">Visualização:</p>
+                  <p className="text-[10px] font-mono text-blue-300 break-all">
+                    venda-ja.pt/loja/{dados.slugLoja || '...'}
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                  <p className="text-[9px] text-amber-700 font-bold leading-tight uppercase">
+                    🔒 Disponível apenas no plano Premium
+                  </p>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* LADO DIREITO: FORMULÁRIO */}
         <div className="lg:col-span-3">
           <form onSubmit={salvarDefinicoes} className="bg-white rounded-[3.5rem] shadow-sm border border-slate-100 overflow-hidden">
             <div className="p-8 md:p-12 space-y-10">
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                {/* FISCAL */}
+                {/* IDENTIDADE E CONTACTOS */}
                 <div className="space-y-6">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black italic">!</div>
-                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Dados do Recibo</h3>
+                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Identidade</h3>
                   </div>
-
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-4">Nome no Recibo</label>
-                      <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all text-sm shadow-inner"
-                        placeholder="Ex: Minha Loja, Lda"
-                        value={dados.nomeOficial || ''} onChange={e => setDados({...dados, nomeOficial: e.target.value})} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-4">NUIT</label>
-                      <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all text-sm shadow-inner"
-                        placeholder="400..."
-                        value={dados.nuit || ''} onChange={e => setDados({...dados, nuit: e.target.value})} />
-                    </div>
+                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
+                      placeholder="Nome no Recibo" value={dados.nomeOficial || ''} onChange={e => setDados({...dados, nomeOficial: e.target.value})} />
+                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
+                      placeholder="NUIT" value={dados.nuit || ''} onChange={e => setDados({...dados, nuit: e.target.value})} />
+                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
+                      placeholder="Telefone / WhatsApp" value={dados.telefone || ''} onChange={e => setDados({...dados, telefone: e.target.value})} />
+                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
+                      placeholder="Endereço Físico" value={dados.endereco || ''} onChange={e => setDados({...dados, endereco: e.target.value})} />
                   </div>
                 </div>
 
-                {/* CONTACTOS */}
                 <div className="space-y-6">
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><Phone size={18}/></div>
-                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Contactos</h3>
+                    <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center"><Truck size={18}/></div>
+                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Logística</h3>
                   </div>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-4">Telefone Principal</label>
-                      <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all text-sm shadow-inner"
-                        value={dados.telefone || ''} onChange={e => setDados({...dados, telefone: e.target.value})} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 ml-4">Endereço Físico</label>
-                      <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all text-sm shadow-inner"
-                        value={dados.endereco || ''} onChange={e => setDados({...dados, endereco: e.target.value})} />
-                    </div>
+                  <div className="space-y-4 bg-slate-50 p-6 rounded-[2.5rem]">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={dados.fazEntrega} onChange={e => setDados({...dados, fazEntrega: e.target.checked})} className="w-5 h-5 accent-blue-600" />
+                      <span className="text-xs font-black uppercase text-slate-700">Fazemos Entregas</span>
+                    </label>
+                    {dados.fazEntrega && (
+                      <input type="number" className="w-full bg-white p-4 rounded-2xl outline-none border border-slate-200 font-bold text-sm"
+                        placeholder="Taxa de Entrega (MT)" value={dados.taxaEntrega} onChange={e => setDados({...dados, taxaEntrega: e.target.value})} />
+                    )}
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={dados.permiteLevantamento} onChange={e => setDados({...dados, permiteLevantamento: e.target.checked})} className="w-5 h-5 accent-blue-600" />
+                      <span className="text-xs font-black uppercase text-slate-700">Levantamento na Loja</span>
+                    </label>
                   </div>
                 </div>
               </div>
 
-              {/* SECÇÃO EXCLUSIVA PREMIUM: PRESENÇA ONLINE */}
+              {/* MÉTODOS DE PAGAMENTO */}
               {isPremium && (
-                <div className="bg-slate-900 p-8 rounded-[3rem] space-y-6 border border-slate-800 text-white">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <Globe size={20} className="text-blue-400"/>
-                      <h3 className="font-black uppercase italic tracking-tighter text-lg">Identidade Digital (Premium)</h3>
-                    </div>
-                    <ExternalLink size={18} className="text-slate-500" />
+                <div className="pt-6 border-t border-slate-100 space-y-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-pink-50 text-pink-600 rounded-xl flex items-center justify-center"><Wallet size={18}/></div>
+                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Pagamentos Aceites</h3>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-500 ml-4">Subdomínio da Loja</label>
-                      <div className="flex items-center bg-slate-800 rounded-[2rem] border-2 border-slate-700 focus-within:border-blue-500 transition-all overflow-hidden">
-                        <span className="pl-6 text-slate-500 text-xs font-bold">vendaja.com/</span>
-                        <input className="w-full bg-transparent p-5 pl-1 outline-none font-bold text-sm text-blue-300"
-                          placeholder="minha-loja"
-                          value={dados.slugLoja || ''} onChange={e => setDados({...dados, slugLoja: e.target.value.toLowerCase().replace(/\s+/g, '-')})} />
-                      </div>
-                      <p className="text-[8px] text-slate-500 ml-4 uppercase font-bold tracking-widest italic">Este será o seu link público para clientes</p>
+                    <div className={`p-6 rounded-[2.5rem] transition-all border-2 ${dados.aceitaMpesa ? 'bg-white border-pink-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                      <label className="flex items-center gap-3 cursor-pointer mb-4">
+                        <input type="checkbox" checked={dados.aceitaMpesa} onChange={e => setDados({...dados, aceitaMpesa: e.target.checked})} className="w-5 h-5 accent-pink-600" />
+                        <span className="text-xs font-black uppercase text-pink-700">M-Pesa</span>
+                      </label>
+                      {dados.aceitaMpesa && (
+                        <div className="space-y-3">
+                          <input className="w-full bg-slate-50 p-3 rounded-xl outline-none border border-slate-200 text-sm font-bold" placeholder="Número M-Pesa" value={dados.numeroMpesa} onChange={e => setDados({...dados, numeroMpesa: e.target.value})} />
+                          <input className="w-full bg-slate-50 p-3 rounded-xl outline-none border border-slate-200 text-sm font-bold" placeholder="Nome Titular" value={dados.nomeMpesa} onChange={e => setDados({...dados, nomeMpesa: e.target.value})} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className={`p-6 rounded-[2.5rem] transition-all border-2 ${dados.aceitaEmola ? 'bg-white border-orange-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                      <label className="flex items-center gap-3 cursor-pointer mb-4">
+                        <input type="checkbox" checked={dados.aceitaEmola} onChange={e => setDados({...dados, aceitaEmola: e.target.checked})} className="w-5 h-5 accent-orange-600" />
+                        <span className="text-xs font-black uppercase text-orange-700">e-Mola</span>
+                      </label>
+                      {dados.aceitaEmola && (
+                        <input className="w-full bg-slate-50 p-3 rounded-xl outline-none border border-slate-200 text-sm font-bold" placeholder="Número e-Mola" value={dados.numeroEmola} onChange={e => setDados({...dados, numeroEmola: e.target.value})} />
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
-              <div className="bg-slate-50 p-8 rounded-[3rem] space-y-6 border border-slate-100">
-                <div className="flex items-center gap-4">
-                  <Coins size={20} className="text-slate-400"/>
-                  <h3 className="font-black text-slate-900 uppercase italic tracking-tighter">Moeda e Rodapé</h3>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Moeda</label>
-                    <select className="w-full bg-white p-5 rounded-2xl outline-none font-black text-sm border-2 border-transparent focus:border-blue-500"
-                      value={dados.moeda} onChange={e => setDados({...dados, moeda: e.target.value})}>
-                      <option value="MT">Metical (MT)</option>
-                      <option value="USD">Dólar ($)</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2 space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Mensagem do Recibo</label>
-                    <input className="w-full bg-white p-5 rounded-2xl outline-none font-bold text-sm border-2 border-transparent focus:border-blue-500"
-                      value={dados.mensagemRecibo} onChange={e => setDados({...dados, mensagemRecibo: e.target.value})} />
-                  </div>
-                </div>
-              </div>
-
-              <button 
-                type="submit" 
-                disabled={salvando}
-                className={`w-full py-8 rounded-[2.5rem] font-black flex items-center justify-center gap-4 transition-all active:scale-95 shadow-2xl ${salvando ? 'bg-slate-100 text-slate-400' : 'bg-blue-600 text-white hover:bg-slate-900 shadow-blue-200'}`}
-              >
+              <button type="submit" disabled={salvando} className={`w-full py-8 rounded-[2.5rem] font-black flex items-center justify-center gap-4 transition-all active:scale-95 shadow-2xl ${salvando ? 'bg-slate-100 text-slate-400' : 'bg-blue-600 text-white hover:bg-slate-900 shadow-blue-200'}`}>
                 {salvando ? <Loader2 className="animate-spin" /> : <Save size={24} />}
                 <span className="uppercase tracking-[0.3em] text-xs">{salvando ? 'A Sincronizar...' : 'Gravar Alterações'}</span>
               </button>
-
             </div>
           </form>
         </div>

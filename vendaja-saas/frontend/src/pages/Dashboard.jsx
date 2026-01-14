@@ -94,7 +94,6 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 
     const vendasHoje = vendas.filter(v => {
       if (!v.data) return false;
-      // Trata se for Timestamp do Firebase ou String ISO
       const dataVenda = v.data?.seconds 
         ? new Date(v.data.seconds * 1000) 
         : new Date(v.data);
@@ -106,7 +105,6 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       0
     );
 
-    // Cálculo de Lucro baseado no custo dos produtos
     let lucroTotal = 0;
     vendas.forEach(v => {
       v.itens?.forEach(item => {
@@ -123,7 +121,7 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
     );
 
     const produtosCriticos = meusProdutos.filter(
-      p => Number(p.stock ?? 0) <= 5 // Reduzi para 5 para ser mais realista
+      p => Number(p.stock ?? 0) <= 5
     );
 
     let saude = 100;
@@ -164,8 +162,6 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 
   return (
     <div className="animate-in fade-in duration-700 space-y-8 pb-10">
-      
-      {/* HEADER DINÂMICO */}
       <div className="flex flex-col md:flex-row justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -190,28 +186,22 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
         </div>
       </div>
 
-      {/* MÉTRICAS DE RELATÓRIO */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card icon={<DollarSign />} title="Volume de Vendas">
           {estatisticas.totalHistorico.toLocaleString()} <small className="text-xs opacity-50 font-black">MT</small>
         </Card>
-
         <Card dark icon={<TrendingUp />} title="Lucro Estimado">
           {estatisticas.lucroTotal.toLocaleString()} <small className="text-xs opacity-50 font-black">MT</small>
         </Card>
-
         <Card icon={<ShoppingBag />} title="Hoje">
           {estatisticas.totalHoje.toLocaleString()} <small className="text-xs opacity-50 font-black">MT</small>
         </Card>
-
         <Card icon={<Package />} title="Stock Crítico" danger={estatisticas.numCriticos > 0}>
           {estatisticas.numCriticos} <small className="text-[10px] opacity-50 font-black">PRODUTOS</small>
         </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* FLUXO RECENTE */}
         <div className="lg:col-span-2 bg-white rounded-[3rem] border shadow-sm overflow-hidden group">
           <div className="p-8 border-b flex justify-between items-center">
             <div className="flex gap-3 items-center">
@@ -242,7 +232,6 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
           </div>
         </div>
 
-        {/* COLUNA LATERAL: PREMIUM E SAÚDE */}
         <div className="flex flex-col gap-6">
           {isPremium ? (
             <div className="bg-slate-900 rounded-[3rem] p-8 text-white relative overflow-hidden group">
@@ -253,13 +242,20 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
                 <div className="bg-blue-600 w-12 h-12 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-500/20">
                   <Globe size={24} />
                 </div>
-                <h4 className="text-xl font-black uppercase italic leading-tight">Canal de<br/>Vendas Online</h4>
-                <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mt-2">Visibilidade Global Ativa</p>
+                <h4 className="text-xl font-black uppercase italic leading-tight">Loja Online<br/>Activa</h4>
+                <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mt-2">Sincronização em Tempo Real</p>
                 
-                <div className="mt-8">
-                   <button className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-[10px] font-black uppercase hover:bg-slate-700 transition-all">
-                     Configurar Minha Vitrine
-                   </button>
+                <div className="mt-8 space-y-4">
+                  <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                    <p className="text-[9px] font-black uppercase opacity-50">Link da Tua Loja</p>
+                    <p className="text-xs font-bold truncate tracking-tight text-blue-100">venda-japro.vercel.app/loja/{usuario.nomeLoja?.toLowerCase().replace(/\s+/g, '')}</p>
+                  </div>
+                  <button 
+                    onClick={() => navigate('/definicoes')}
+                    className="w-full bg-blue-600 p-4 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/10"
+                  >
+                    Configurar Minha Loja
+                  </button>
                 </div>
               </div>
             </div>
@@ -307,7 +303,7 @@ const Card = ({ icon, title, children, dark, danger }) => (
       dark
         ? 'bg-slate-900 text-white border-slate-800 shadow-slate-200'
         : danger
-        ? 'bg-red-50 border-red-100 shadow-red-100'
+        ? 'bg-red-50 border-red-200 shadow-red-100'
         : 'bg-white border-slate-100'
     }`}
   >
