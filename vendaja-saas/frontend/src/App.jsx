@@ -16,6 +16,7 @@ import Definicoes from './pages/Definicoes';
 import Historico from './pages/Historico';
 import Equipa from './pages/Equipa';
 import SuperAdmin from './pages/SuperAdmin';
+import Fiados from './pages/Fiados'; // Importado novo componente
 import Navbar from './components/Navbar';
 import FechoCaixa from './components/FechoCaixa';
 
@@ -32,6 +33,8 @@ function App() {
 
   const MEU_WHATSAPP = "258878296706";
   const isSuperAdmin = usuario?.email === "naironcossa.dev@gmail.com" || usuario?.role === 'superadmin';
+  // Lógica para verificar se o utilizador tem acesso a funções pagas
+  const isPremium = usuario?.plano === 'premium' || isSuperAdmin;
 
   const [configLoja, setConfigLoja] = useState({
     nuit: '', endereco: '', telefone: '', moeda: 'MT', mensagemRecibo: 'Obrigado!', logo: null
@@ -51,7 +54,6 @@ function App() {
     };
   }, []);
 
-  // 1. Monitorizar Autenticação
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (!user) {
@@ -62,7 +64,6 @@ function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // 2. Sincronizar Perfil do Utilizador (Crucial para Ativação em Tempo Real)
   useEffect(() => {
     if (!usuario?.uid) {
       setCarregando(false);
@@ -71,7 +72,7 @@ function App() {
     const unsubUser = onSnapshot(doc(db, "usuarios", usuario.uid), (docSnap) => {
       if (docSnap.exists()) {
         const novosDados = { ...docSnap.data(), uid: docSnap.id };
-        setUsuario(novosDados);
+        setUsuario(novosDados); 
         localStorage.setItem('vendaJa_sessao', JSON.stringify(novosDados));
       } else {
         fazerLogout();
@@ -84,7 +85,6 @@ function App() {
     return () => unsubUser();
   }, [usuario?.uid]);
 
-  // 3. Sincronizar Configurações da Loja
   useEffect(() => {
     if (!usuario?.uid || usuario.status !== 'ativo') return;
     const unsubConfig = onSnapshot(doc(db, "configuracoes", usuario.uid), (docSnap) => {
@@ -95,7 +95,6 @@ function App() {
     return () => unsubConfig();
   }, [usuario?.uid, usuario?.status]);
 
-  // 4. Sincronizar Inventário
   useEffect(() => {
     if (!usuario?.uid || usuario.status !== 'ativo') return;
     const q = query(collection(db, "produtos"), where("lojaId", "==", usuario.uid));
@@ -117,11 +116,8 @@ function App() {
     auth.signOut();
   };
 
-  // TELA DE BLOQUEIO ATUALIZADA (PENDENTE / SUSPENSO)
   const TelaBloqueio = () => {
     const isPendente = usuario?.status === 'pendente';
-    const isSuspenso = usuario?.status === 'suspenso';
-    
     const msgWhatsapp = encodeURIComponent(`Olá Nairon! Sou o ${usuario?.nome} da loja ${usuario?.nomeLoja}. Gostaria de ativar o meu acesso ao VendaJá PRO.`);
 
     return (
@@ -130,35 +126,22 @@ function App() {
           <div className={`w-24 h-24 ${isPendente ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-500'} rounded-[2.5rem] flex items-center justify-center mb-8 mx-auto shadow-inner`}>
             {isPendente ? <Clock size={48} className="animate-pulse" /> : <ShieldAlert size={48} />}
           </div>
-          
           <h1 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-tight">
             {isPendente ? "Aguardando Ativação" : "Acesso Restrito"}
           </h1>
-          
           <p className="text-slate-400 mt-4 font-bold text-[11px] leading-relaxed uppercase tracking-widest">
             {isPendente 
               ? "A tua conta foi criada com sucesso! Para começar a gerir o teu negócio, envia o comprovativo de pagamento para o nosso suporte."
               : "Esta unidade encontra-se suspensa por falta de pagamento ou violação dos termos de uso."}
           </p>
-
           <div className="mt-10 space-y-4">
-            <a 
-              href={`https://wa.me/${MEU_WHATSAPP}?text=${msgWhatsapp}`} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="w-full bg-[#25D366] text-white p-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] hover:brightness-110 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3"
-            >
+            <a href={`https://wa.me/${MEU_WHATSAPP}?text=${msgWhatsapp}`} target="_blank" rel="noopener noreferrer" className="w-full bg-[#25D366] text-white p-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] hover:brightness-110 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3">
               <MessageCircle size={20} /> Enviar Comprovativo
             </a>
-            
-            <button 
-              onClick={fazerLogout} 
-              className="w-full text-slate-400 font-black text-[10px] uppercase p-4 hover:text-red-500 transition-colors flex items-center justify-center gap-2"
-            >
+            <button onClick={fazerLogout} className="w-full text-slate-400 font-black text-[10px] uppercase p-4 hover:text-red-500 transition-colors flex items-center justify-center gap-2">
               <LogOut size={16} /> Sair da Conta
             </button>
           </div>
-          
           <p className="mt-8 text-[9px] font-bold text-slate-300 uppercase tracking-widest">ID da Loja: {usuario?.lojaId}</p>
         </div>
       </div>
@@ -177,8 +160,6 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
-        
-        {/* NAVBAR só aparece se estiver ATIVO */}
         {usuario && (usuario.status === 'ativo' || isSuperAdmin) && (
           <Navbar usuario={usuario} fazerLogout={fazerLogout} isOnline={isOnline} abrirFecho={() => setMostrarFecho(true)} />
         )}
@@ -188,7 +169,6 @@ function App() {
             <Route path="/login" element={!usuario ? <Login aoLogar={fazerLogin} /> : (isSuperAdmin ? <Navigate to="/gestao-mestra" /> : <Navigate to="/" />)} />
             <Route path="/registo" element={!usuario ? <Registo setUsuario={fazerLogin} /> : <Navigate to="/" />} />
             <Route path="/recuperar-senha" element={<RecuperarSenha />} />
-
             <Route path="/gestao-mestra" element={isSuperAdmin ? <SuperAdmin /> : <Navigate to="/login" />} />
 
             <Route path="/" element={
@@ -206,6 +186,9 @@ function App() {
             <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
             <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
             
+            {/* NOVA ROTA: Fiados (Apenas para Premium ou Admin) */}
+            <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) && isPremium ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+
             <Route path="/definicoes" element={
               (usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' 
               ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> 
@@ -222,4 +205,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;

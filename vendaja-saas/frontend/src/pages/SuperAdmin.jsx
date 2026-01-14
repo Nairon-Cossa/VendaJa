@@ -3,7 +3,8 @@ import { db, auth } from '../firebase';
 import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 import { 
   Loader2, Search, ShieldCheck, KeyRound, Eye, EyeOff, TrendingUp, 
-  ShoppingBag, Store, Users, AlertCircle, CheckCircle2, DollarSign, Activity, Globe
+  ShoppingBag, Store, Users, AlertCircle, CheckCircle2, DollarSign, Activity, Globe,
+  Zap, Crown
 } from 'lucide-react';
 
 const SuperAdmin = () => {
@@ -110,6 +111,16 @@ const SuperAdmin = () => {
         lojasAtivas: novoStatus === 'ativo' ? prev.lojasAtivas + 1 : prev.lojasAtivas - 1
       }));
     } catch (error) { alert("FALHA NA OPERAÇÃO."); }
+  };
+
+  // NOVA FUNÇÃO: Alternar entre Básico e Premium no Firestore
+  const alterarPlano = async (uid, planoAtual) => {
+    const novoPlano = planoAtual === 'premium' ? 'basico' : 'premium';
+    if (!window.confirm(`ALTERAR PLANO PARA ${novoPlano.toUpperCase()}?`)) return;
+    try {
+      await updateDoc(doc(db, "usuarios", uid), { plano: novoPlano });
+      setClientes(clientes.map(c => c.id === uid ? { ...c, plano: novoPlano } : c));
+    } catch (error) { alert("FALHA AO ALTERAR PLANO."); }
   };
 
   if (!validado) {
@@ -220,6 +231,7 @@ const SuperAdmin = () => {
               ).map((cliente) => {
                 const fin = faturamentos[cliente.lojaId] || { total: 0, qtdVendas: 0 };
                 const isAtivo = cliente.status === 'ativo';
+                const isPremium = cliente.plano === 'premium';
 
                 return (
                   <div key={cliente.id} className="bg-white border border-slate-100 rounded-[3rem] p-6 pr-10 shadow-sm flex flex-col lg:flex-row items-center justify-between gap-8 hover:border-blue-200 transition-all group relative overflow-hidden">
@@ -227,12 +239,13 @@ const SuperAdmin = () => {
                     
                     <div className="flex items-center gap-6 flex-1 w-full">
                       <div className={`w-16 h-16 rounded-[1.8rem] flex items-center justify-center text-white shadow-xl ${isAtivo ? 'bg-emerald-500 shadow-emerald-100' : 'bg-red-500 shadow-red-100'}`}>
-                        <Store size={28} />
+                        {isPremium ? <Crown size={28} /> : <Store size={28} />}
                       </div>
                       <div className="space-y-1">
                         <div className="flex items-center gap-3">
                           <h3 className="font-black text-slate-900 uppercase italic text-lg tracking-tighter">{cliente.nomeLoja || 'Sem Nome'}</h3>
                           {!isAtivo && <span className="bg-red-50 text-red-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-red-100">Unidade Suspensa</span>}
+                          {isPremium && <span className="bg-amber-100 text-amber-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-amber-200">Premium</span>}
                         </div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{cliente.email} • ID: <span className="text-slate-600">{cliente.lojaId}</span></p>
                       </div>
@@ -249,7 +262,19 @@ const SuperAdmin = () => {
                       </div>
                     </div>
 
-                    <div className="flex gap-3 w-full lg:w-auto">
+                    <div className="flex flex-wrap gap-3 w-full lg:w-auto">
+                      <button 
+                        onClick={() => alterarPlano(cliente.id, cliente.plano)}
+                        className={`flex-1 lg:w-44 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
+                          isPremium 
+                          ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:scale-105 shadow-amber-200' 
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        {isPremium ? <Crown size={14} /> : <Zap size={14} />}
+                        {isPremium ? 'Plano Premium' : 'Ativar Premium'}
+                      </button>
+
                       <button 
                         onClick={() => alterarStatus(cliente.id, cliente.status)}
                         className={`flex-1 lg:w-40 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${

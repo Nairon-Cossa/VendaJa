@@ -19,7 +19,10 @@ import {
   ListOrdered,
   ChevronRight,
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  Globe,
+  Zap,
+  Crown
 } from 'lucide-react';
 
 const Dashboard = ({ produtos = [], usuario, avisar }) => {
@@ -28,8 +31,11 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const navigate = useNavigate();
 
+  // Verifica se o plano é premium
+  const isPremium = usuario?.plano === 'premium';
+
   /* ===============================
-     MONITOR DE CONEXÃO
+      MONITOR DE CONEXÃO
   =============================== */
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -42,7 +48,7 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
   }, []);
 
   /* ===============================
-     FIRESTORE – VENDAS POR UID
+      FIRESTORE – VENDAS POR UID
   =============================== */
   useEffect(() => {
     if (!usuario?.uid) return;
@@ -76,10 +82,10 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
   }, [usuario?.uid, avisar]);
 
   /* ===============================
-     ESTATÍSTICAS
+      ESTATÍSTICAS (Relatório de Performance)
   =============================== */
   const estatisticas = useMemo(() => {
-    const hoje = new Date().toLocaleDateString();
+    const hojeStr = new Date().toLocaleDateString();
 
     const totalHistorico = vendas.reduce(
       (acc, v) => acc + Number(v.total || 0),
@@ -88,11 +94,11 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 
     const vendasHoje = vendas.filter(v => {
       if (!v.data) return false;
-      const d =
-        typeof v.data.toDate === 'function'
-          ? v.data.toDate()
-          : new Date(v.data);
-      return d.toLocaleDateString() === hoje;
+      // Trata se for Timestamp do Firebase ou String ISO
+      const dataVenda = v.data?.seconds 
+        ? new Date(v.data.seconds * 1000) 
+        : new Date(v.data);
+      return dataVenda.toLocaleDateString() === hojeStr;
     });
 
     const totalHoje = vendasHoje.reduce(
@@ -100,29 +106,29 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       0
     );
 
+    // Cálculo de Lucro baseado no custo dos produtos
     let lucroTotal = 0;
     vendas.forEach(v => {
       v.itens?.forEach(item => {
         const prod = produtos.find(p => p.id === item.id);
         const custo = Number(prod?.custo || 0);
-        const preco = Number(item.preco || 0);
-        const qtd = Number(item.qtd || 0);
-        lucroTotal += (preco - custo) * qtd;
+        const precoVenda = Number(item.preco || 0);
+        const qtd = Number(item.quantidade || item.qtd || 0);
+        lucroTotal += (precoVenda - custo) * qtd;
       });
     });
 
-    // 🔥 PRODUTOS APENAS DA LOJA LOGADA
     const meusProdutos = produtos.filter(
       p => p.lojaId === usuario?.uid
     );
 
     const produtosCriticos = meusProdutos.filter(
-      p => Number(p.stock ?? 0) <= 15
+      p => Number(p.stock ?? 0) <= 5 // Reduzi para 5 para ser mais realista
     );
 
     let saude = 100;
-    if (produtosCriticos.length > 0) saude -= produtosCriticos.length * 2;
-    if (!isOnline) saude -= 50;
+    if (produtosCriticos.length > 0) saude -= produtosCriticos.length * 5;
+    if (!isOnline) saude -= 30;
 
     return {
       totalHistorico,
@@ -135,9 +141,6 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
     };
   }, [vendas, produtos, isOnline, usuario?.uid]);
 
-  /* ===============================
-     LOADERS / GUARDS
-  =============================== */
   if (carregando && usuario?.uid && vendas.length === 0) {
     return (
       <div className="h-96 flex items-center justify-center">
@@ -159,135 +162,162 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
     );
   }
 
-  /* ===============================
-     UI
-  =============================== */
   return (
     <div className="animate-in fade-in duration-700 space-y-8 pb-10">
-      {/* HEADER */}
+      
+      {/* HEADER DINÂMICO */}
       <div className="flex flex-col md:flex-row justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black italic uppercase">
-            Performance Hub
-          </h2>
-          <p className="text-slate-500 font-bold text-xs uppercase tracking-widest">
-            Unidade:{' '}
-            <span className="text-blue-600">
-              {usuario.nomeLoja || 'Gestão Local'}
+          <div className="flex items-center gap-2">
+            <h2 className="text-3xl font-black italic uppercase leading-none tracking-tighter">
+              Performance <span className="text-blue-600">Hub</span>
+            </h2>
+            {isPremium && <Crown size={24} className="text-amber-500" />}
+          </div>
+          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">
+            Loja: <span className="text-slate-900">{usuario.nomeLoja || 'Unidade Local'}</span>
+            <span className={`ml-3 px-3 py-1 rounded-full text-[9px] font-black ${isPremium ? 'bg-amber-100 text-amber-600 border border-amber-200' : 'bg-slate-100 text-slate-400'}`}>
+              {isPremium ? 'PLATINUM ACCESS' : 'BASIC PLAN'}
             </span>
           </p>
         </div>
 
-        <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl border">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
-            }`}
-          />
+        <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl border shadow-sm self-start">
+          <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
           <span className="text-[10px] font-black uppercase tracking-widest">
-            {isOnline ? 'Cloud Sync Ativo' : 'Modo Offline'}
+            {isOnline ? 'Sistema Online' : 'Modo Offline'}
           </span>
         </div>
       </div>
 
-      {/* CARDS */}
+      {/* MÉTRICAS DE RELATÓRIO */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card icon={<DollarSign />} title="Faturação Total">
-          {estatisticas.totalHistorico.toLocaleString()} MT
+        <Card icon={<DollarSign />} title="Volume de Vendas">
+          {estatisticas.totalHistorico.toLocaleString()} <small className="text-xs opacity-50 font-black">MT</small>
         </Card>
 
         <Card dark icon={<TrendingUp />} title="Lucro Estimado">
-          {estatisticas.lucroTotal.toLocaleString()} MT
+          {estatisticas.lucroTotal.toLocaleString()} <small className="text-xs opacity-50 font-black">MT</small>
         </Card>
 
-        <Card icon={<ShoppingBag />} title="Vendas Hoje">
-          {estatisticas.totalHoje.toLocaleString()} MT
+        <Card icon={<ShoppingBag />} title="Hoje">
+          {estatisticas.totalHoje.toLocaleString()} <small className="text-xs opacity-50 font-black">MT</small>
         </Card>
 
-        <Card
-          icon={<Package />}
-          title="Stock Crítico"
-          danger={estatisticas.numCriticos > 0}
-        >
-          {estatisticas.numCriticos}
+        <Card icon={<Package />} title="Stock Crítico" danger={estatisticas.numCriticos > 0}>
+          {estatisticas.numCriticos} <small className="text-[10px] opacity-50 font-black">PRODUTOS</small>
         </Card>
       </div>
 
-      {/* TABELA */}
-      <div className="bg-white rounded-[3rem] border overflow-hidden">
-        <div className="p-8 border-b flex gap-3 items-center">
-          <Clock size={16} />
-          <h4 className="font-black uppercase text-xs tracking-widest">
-            Fluxo Recente
-          </h4>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* FLUXO RECENTE */}
+        <div className="lg:col-span-2 bg-white rounded-[3rem] border shadow-sm overflow-hidden group">
+          <div className="p-8 border-b flex justify-between items-center">
+            <div className="flex gap-3 items-center">
+                <Clock className="text-blue-600" size={18} />
+                <h4 className="font-black uppercase text-xs tracking-widest">Registos Recentes</h4>
+            </div>
+            <button onClick={() => navigate('/historico')} className="text-[10px] font-black text-slate-400 hover:text-blue-600 transition-colors uppercase tracking-widest">Ver Tudo</button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <tbody>
+                {vendas.slice(0, 5).map(v => (
+                  <tr key={v.id} onClick={() => navigate('/historico')} className="cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
+                    <td className="p-6">
+                        <p className="font-black uppercase text-[11px] text-slate-800">{v.infoAdicional || 'Venda Rápida'}</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Vendedor: {v.vendedorNome || 'Admin'}</p>
+                    </td>
+                    <td className="p-6">
+                        <span className="text-[9px] font-black uppercase bg-slate-100 px-3 py-1 rounded-lg text-slate-500">{v.metodo}</span>
+                    </td>
+                    <td className="p-6 text-right">
+                      <p className="font-black text-slate-900 italic">{Number(v.total).toFixed(2)} MT</p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <table className="w-full">
-          <tbody>
-            {vendas.slice(0, 6).map(v => (
-              <tr
-                key={v.id}
-                onClick={() => navigate('/historico')}
-                className="cursor-pointer hover:bg-slate-50"
+        {/* COLUNA LATERAL: PREMIUM E SAÚDE */}
+        <div className="flex flex-col gap-6">
+          {isPremium ? (
+            <div className="bg-slate-900 rounded-[3rem] p-8 text-white relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                <Globe size={120} />
+              </div>
+              <div className="relative z-10">
+                <div className="bg-blue-600 w-12 h-12 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-500/20">
+                  <Globe size={24} />
+                </div>
+                <h4 className="text-xl font-black uppercase italic leading-tight">Canal de<br/>Vendas Online</h4>
+                <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mt-2">Visibilidade Global Ativa</p>
+                
+                <div className="mt-8">
+                   <button className="w-full bg-slate-800 border border-slate-700 p-4 rounded-2xl text-[10px] font-black uppercase hover:bg-slate-700 transition-all">
+                     Configurar Minha Vitrine
+                   </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-[3rem] p-8 flex flex-col justify-center items-center text-center group">
+              <div className="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center shadow-xl mb-6 group-hover:rotate-12 transition-transform">
+                <Zap size={32} className="text-blue-600" />
+              </div>
+              <h4 className="text-blue-900 font-black uppercase italic leading-tight">Upgrade para<br/>Premium</h4>
+              <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest mt-4 leading-relaxed">
+                Desbloqueia Gestão de Fiados, Loja Online e Relatórios Avançados.
+              </p>
+              <button 
+                onClick={() => window.open(`https://wa.me/258878296706?text=Olá+Nairon,+estou+na+loja+${usuario.nomeLoja}+e+quero+ativar+o+Premium.`, '_blank')}
+                className="mt-8 w-full bg-blue-600 text-white py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200 active:scale-95"
               >
-                <td className="p-6 font-black uppercase text-xs">
-                  {v.vendedorNome || 'Admin'}
-                </td>
-                <td className="p-6 text-xs uppercase">{v.metodo}</td>
-                <td className="p-6 text-right font-black">
-                  {Number(v.total).toFixed(2)} MT
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                Ativar Agora
+              </button>
+            </div>
+          )}
 
-      {/* SAÚDE */}
-      <div className="bg-emerald-500 p-8 rounded-[3rem] text-white">
-        <Activity size={60} className="opacity-20" />
-        <h4 className="text-5xl font-black italic">
-          {estatisticas.saude}%
-        </h4>
-        <p className="uppercase text-xs font-black">
-          Saúde Operacional
-        </p>
-        <div className="mt-4 flex items-center gap-2 text-xs">
-          <CheckCircle2 size={14} />
-          {estatisticas.numCriticos === 0
-            ? 'Sistema Equilibrado'
-            : 'Ajustar Inventário'}
+          <div className={`p-8 rounded-[3rem] text-white relative overflow-hidden transition-colors ${estatisticas.saude > 70 ? 'bg-emerald-500' : 'bg-orange-500'}`}>
+             <Activity size={80} className="absolute -right-4 -bottom-4 opacity-20" />
+             <p className="uppercase text-[10px] font-black tracking-widest opacity-80 mb-1">Saúde do Negócio</p>
+             <h4 className="text-5xl font-black italic">
+               {estatisticas.saude}%
+             </h4>
+          </div>
         </div>
       </div>
 
       <button
         onClick={() => navigate('/historico')}
-        className="w-full bg-blue-600 p-8 rounded-[3rem] text-white font-black uppercase"
+        className="w-full bg-white border border-slate-100 p-8 rounded-[3rem] text-slate-900 font-black uppercase text-xs tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-slate-50 transition-all shadow-sm"
       >
-        Auditoria Completa <ChevronRight size={16} />
+        Auditoria Completa de Vendas <ChevronRight size={18} className="text-blue-600" />
       </button>
     </div>
   );
 };
 
-/* ===============================
-   CARD COMPONENT
-=============================== */
 const Card = ({ icon, title, children, dark, danger }) => (
   <div
-    className={`p-8 rounded-[2.5rem] border shadow-sm ${
+    className={`p-8 rounded-[2.5rem] border shadow-sm transition-all hover:shadow-xl ${
       dark
-        ? 'bg-slate-900 text-white'
+        ? 'bg-slate-900 text-white border-slate-800 shadow-slate-200'
         : danger
-        ? 'bg-red-50 border-red-200'
-        : 'bg-white'
+        ? 'bg-red-50 border-red-100 shadow-red-100'
+        : 'bg-white border-slate-100'
     }`}
   >
-    <div className="mb-4">{icon}</div>
-    <p className="text-[10px] font-black uppercase tracking-widest opacity-60">
+    <div className={`mb-4 w-10 h-10 rounded-xl flex items-center justify-center ${dark ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-900'}`}>
+      {React.cloneElement(icon, { size: 20 })}
+    </div>
+    <p className="text-[10px] font-black uppercase tracking-widest opacity-50">
       {title}
     </p>
-    <h3 className="text-3xl font-black italic mt-2">{children}</h3>
+    <h3 className="text-3xl font-black italic mt-2 tracking-tighter">{children}</h3>
   </div>
 );
 

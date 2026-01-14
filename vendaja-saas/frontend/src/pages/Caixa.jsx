@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { db } from '../firebase'; 
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
-  Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Hash
+  Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Hash, Clock, Crown
 } from 'lucide-react';
 import Recibo from '../components/Recibo';
 
@@ -20,17 +20,18 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const [carrinho, setCarrinho] = useState([]);
   const [pesquisa, setPesquisa] = useState('');
   const [metodo, setMetodo] = useState('Dinheiro');
-  const [referencia, setReferencia] = useState(''); // NOVO: Estado para o código do SMS
+  const [referencia, setReferencia] = useState('');
   const [vendaFinalizada, setVendaFinalizada] = useState(null);
   const [infoExtra, setInfoExtra] = useState('');
   const [carregando, setCarregando] = useState(false);
   const [valorRecebido, setValorRecebido] = useState(''); 
   
   const inputPesquisa = useRef(null);
+  const isPremium = usuario?.plano === 'premium';
   const config = REGRAS_SETOR[usuario.tipoNegocio] || REGRAS_SETOR['Mercearia'];
 
   const produtosDaLoja = produtos.filter(p => 
-    p.lojaId === usuario.uid && 
+    p.lojaId === usuario.lojaId && 
     (p.nome.toLowerCase().includes(pesquisa.toLowerCase()) || 
      (p.referencia && p.referencia.toLowerCase().includes(pesquisa.toLowerCase())))
   );
@@ -67,6 +68,12 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
         return;
     }
 
+    // Bloqueio de Fiado/Aberto para plano Básico
+    if (metodo === 'Aberto' && !isPremium) {
+        avisar("UPGRADE PARA PREMIUM PARA USAR FIADO", "info");
+        return;
+    }
+
     setCarregando(true);
     const batch = writeBatch(db);
     
@@ -76,7 +83,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
       
       const dadosVenda = {
         id: vendaRef.id,
-        lojaId: usuario.uid, 
+        lojaId: usuario.lojaId, 
         vendedorId: usuario.uid,
         vendedorNome: usuario.nome,
         lojaNome: usuario.nomeLoja,
@@ -95,7 +102,8 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
         })),
         total: totalVenda,
         metodo,
-        referencia: referencia.toUpperCase(), // SALVANDO A REF DO SMS
+        status: metodo === 'Aberto' ? 'PENDENTE' : 'PAGO',
+        referencia: referencia.toUpperCase(),
         valorRecebido: Number(valorRecebido) || totalVenda,
         troco: (Number(valorRecebido) - totalVenda) > 0 ? (Number(valorRecebido) - totalVenda) : 0,
         infoAdicional: infoExtra.toUpperCase(),
@@ -136,7 +144,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
             <input 
               ref={inputPesquisa}
               className="w-full bg-slate-100/50 p-5 pl-14 rounded-2xl outline-none font-bold text-slate-700 focus:bg-white focus:ring-4 ring-blue-50 transition-all border-2 border-transparent focus:border-blue-200"
-              placeholder="Pesquisar produto..."
+              placeholder="Pesquisar produto ou ref..."
               value={pesquisa}
               onChange={e => setPesquisa(e.target.value)}
             />
@@ -152,7 +160,10 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
               className={`group p-4 rounded-[2rem] border-2 transition-all text-left h-48 flex flex-col justify-between ${p.stock <= 0 ? 'bg-slate-100 opacity-60' : 'bg-white border-transparent hover:border-blue-500 hover:shadow-2xl hover:-translate-y-1 active:scale-95 shadow-sm'}`}
             >
               <div className="space-y-2">
-                <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase">{p.categoria}</span>
+                <div className="flex justify-between items-start">
+                    <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase">{p.categoria}</span>
+                    <span className="text-[9px] font-bold text-slate-400">STK: {p.stock}</span>
+                </div>
                 <h4 className="font-black text-slate-800 text-sm uppercase leading-tight line-clamp-3">{p.nome}</h4>
               </div>
               <div className="flex items-end justify-between">
@@ -172,8 +183,8 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
       <div className="w-full lg:w-[450px] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden">
         <div className="p-8 space-y-6 flex-1 overflow-y-auto">
           <div className="flex items-center justify-between">
-            <h3 className="font-black italic uppercase text-2xl tracking-tighter text-slate-800">Carrinho</h3>
-            <span className="bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full">{carrinho.length} ITENS</span>
+            <h3 className="font-black italic uppercase text-2xl tracking-tighter text-slate-800">Checkout</h3>
+            {!isPremium && <span className="text-[8px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md flex items-center gap-1 uppercase tracking-widest"><Crown size={10}/> Básico</span>}
           </div>
 
           <div className="space-y-2">
@@ -187,33 +198,37 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           </div>
 
           <div className="space-y-3">
-             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Forma de Pagamento</label>
+             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Pagamento</label>
              <div className="grid grid-cols-2 gap-2">
                 {[
                 { id: 'Dinheiro', color: 'border-emerald-100 text-emerald-600', active: 'bg-emerald-600 text-white border-emerald-600', icon: <Banknote size={16}/> },
                 { id: 'M-Pesa', color: 'border-red-100 text-red-600', active: 'bg-red-600 text-white border-red-600', icon: <Smartphone size={16}/> },
                 { id: 'e-Mola', color: 'border-orange-100 text-orange-600', active: 'bg-orange-600 text-white border-orange-600', icon: <Smartphone size={16}/> },
-                { id: 'mKesh', color: 'border-yellow-200 text-yellow-700', active: 'bg-yellow-500 text-white border-yellow-500', icon: <Smartphone size={16}/> }
+                { id: 'Aberto', color: 'border-slate-200 text-slate-400', active: 'bg-slate-900 text-white border-slate-900', icon: <Clock size={16}/>, premium: true }
                 ].map((m) => (
                 <button
                     key={m.id}
-                    onClick={() => { setMetodo(m.id); if(m.id === 'Dinheiro') setReferencia(''); }}
-                    className={`flex items-center justify-center gap-2 p-4 rounded-2xl border-2 font-black text-[11px] uppercase transition-all active:scale-95 ${metodo === m.id ? m.active : 'bg-white ' + m.color}`}
+                    onClick={() => { 
+                        if(m.premium && !isPremium) return avisar("FIADO DISPONÍVEL APENAS NO PREMIUM", "info");
+                        setMetodo(m.id); 
+                        if(m.id === 'Dinheiro' || m.id === 'Aberto') setReferencia(''); 
+                    }}
+                    className={`flex items-center justify-center gap-2 p-4 rounded-2xl border-2 font-black text-[11px] uppercase transition-all relative ${metodo === m.id ? m.active : 'bg-white ' + m.color} ${m.premium && !isPremium ? 'opacity-40 grayscale' : 'active:scale-95'}`}
                 >
                     {m.icon} {m.id}
+                    {m.premium && !isPremium && <Crown size={10} className="absolute top-1 right-2 text-amber-500" />}
                 </button>
                 ))}
             </div>
 
-            {/* CAMPO DE REFERÊNCIA MPESA/EMOLA - RESOLVE O TEU PROBLEMA */}
-            {(metodo !== 'Dinheiro') && (
+            {metodo !== 'Dinheiro' && metodo !== 'Aberto' && (
               <div className="animate-in slide-in-from-top-2 duration-300">
                 <label className="text-[10px] font-black text-blue-600 uppercase ml-1 flex items-center gap-1">
-                  <Hash size={12}/> Referência da Transação (SMS)
+                  <Hash size={12}/> Referência SMS
                 </label>
                 <input 
                   className="w-full bg-blue-50 p-4 rounded-xl outline-none border-2 border-blue-200 focus:border-blue-600 font-black text-blue-700 placeholder:text-blue-200 mt-1 uppercase"
-                  placeholder="EX: 8K29L0XJ..."
+                  placeholder="CÓDIGO SMS..."
                   value={referencia}
                   onChange={e => setReferencia(e.target.value)}
                 />
@@ -243,33 +258,35 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           </div>
         </div>
 
-        {/* FOOTER TOTALIZADOR */}
+        {/* FOOTER */}
         <div className="p-8 bg-slate-900 rounded-t-[3.5rem] space-y-6">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Total a Pagar</span>
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Total</span>
             <span className="text-5xl font-black italic text-white tracking-tighter">
                 {total.toFixed(2)}<small className="text-sm ml-1 opacity-50">{configLoja.moeda}</small>
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-500 uppercase ml-1">Valor Recebido</label>
-                <input 
-                    type="number"
-                    className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl text-white font-black text-xl outline-none focus:bg-white/10 focus:border-blue-500 transition-all"
-                    placeholder="0.00"
-                    value={valorRecebido}
-                    onChange={e => setValorRecebido(e.target.value)}
-                />
+          {metodo !== 'Aberto' && (
+            <div className="grid grid-cols-2 gap-4 animate-in fade-in duration-300">
+                <div className="space-y-1">
+                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1">Recebido</label>
+                    <input 
+                        type="number"
+                        className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl text-white font-black text-xl outline-none focus:bg-white/10 focus:border-blue-500 transition-all"
+                        placeholder="0.00"
+                        value={valorRecebido}
+                        onChange={e => setValorRecebido(e.target.value)}
+                    />
+                </div>
+                <div className="text-right flex flex-col justify-end">
+                    <p className="text-[9px] font-black text-slate-500 uppercase mr-1">Troco</p>
+                    <p className="text-3xl font-black text-emerald-400 italic">
+                        {(Number(valorRecebido) - total > 0 ? Number(valorRecebido) - total : 0).toFixed(2)}
+                    </p>
+                </div>
             </div>
-            <div className="text-right flex flex-col justify-end">
-                <p className="text-[9px] font-black text-slate-500 uppercase mr-1">Troco</p>
-                <p className="text-3xl font-black text-emerald-400 italic">
-                    {(Number(valorRecebido) - total > 0 ? Number(valorRecebido) - total : 0).toFixed(2)}
-                </p>
-            </div>
-          </div>
+          )}
 
           <button 
               onClick={finalizarVenda}
@@ -277,9 +294,9 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
               className={`w-full py-6 rounded-[2rem] font-black text-sm transition-all flex items-center justify-center gap-3 uppercase tracking-widest ${carrinho.length === 0 || carregando ? 'bg-white/5 text-white/20' : 'bg-blue-600 text-white hover:bg-blue-500 hover:scale-[1.02] shadow-xl shadow-blue-500/20 active:scale-95'}`}
           >
             {carregando ? (
-                <div className="flex items-center gap-2 animate-pulse">A PROCESSAR...</div>
+                <div className="flex items-center gap-2 animate-pulse">PROCESSANDO...</div>
             ) : (
-                <><CheckCircle2 size={22} /> {config.botaoAcao}</>
+                <><CheckCircle2 size={22} /> {metodo === 'Aberto' ? 'REGISTAR NA CONTA' : config.botaoAcao}</>
             )}
           </button>
         </div>
