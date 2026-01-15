@@ -304,7 +304,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
 
       {vendaFinalizada && (
         <Recibo 
-          venda={vendaFinalizada} 
+          venda={vendaFinalizada.id} 
           configLoja={configLoja}
           fechar={() => { 
             setVendaFinalizada(null); 
