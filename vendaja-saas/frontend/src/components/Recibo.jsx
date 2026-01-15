@@ -1,5 +1,5 @@
 import React from 'react';
-import { Printer, X, CheckCircle, Store, Hash } from 'lucide-react'; // Adicionei Hash icon
+import { Printer, X, CheckCircle, Store, Hash } from 'lucide-react';
 
 const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) => {
   
@@ -10,7 +10,8 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
   const logoExibir = venda.configRecibo?.logo || configLoja.logoUrl || configLoja.logo;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4 overflow-y-auto font-sans">
+    // CORREÇÃO: Aumentei o z-index para 9999 para garantir que fica por cima de tudo
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4 overflow-y-auto font-sans">
       
       {/* BOTÕES DE ACÇÃO */}
       <div className="absolute top-6 right-6 flex gap-3 print:hidden">
@@ -100,7 +101,7 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
           </tbody>
         </table>
 
-        {/* TOTAIS E PAGAMENTO - AQUI ESTÁ O UPDATE PARA O TEU PROBLEMA */}
+        {/* TOTAIS E PAGAMENTO */}
         <div className="space-y-2 border-t-2 border-slate-900 pt-4 mb-8">
           <div className="flex justify-between items-end">
             <span className="text-sm font-black uppercase italic text-slate-900">Total Pago</span>
@@ -114,7 +115,6 @@ const Recibo = ({ venda, configLoja, fechar, nomeSistema = "VENDA JÁ PRO" }) =>
             <span className="bg-blue-50 px-2 py-0.5 rounded">{venda.metodo}</span>
           </div>
 
-          {/* NOVO: MOSTRA A REFERÊNCIA DO SMS SE EXISTIR (RESOLVE O TEU PROBLEMA) */}
           {venda.referencia && (
             <div className="flex justify-between text-[10px] font-black text-red-600 uppercase border-y border-dashed border-red-100 py-2 my-1">
               <span className="flex items-center gap-1"><Hash size={10}/> Ref. Transação:</span>

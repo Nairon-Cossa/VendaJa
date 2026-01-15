@@ -3,9 +3,9 @@ import {
   Settings, Store, MapPin, Hash, Phone, Link as LinkIcon,
   Save, Globe, Bell, ShieldCheck, CreditCard, Coins, Upload, Image as ImageIcon, X, Loader2, Crown, ExternalLink,
   Truck, Wallet, Building2
-} from 'lucide-react'; // Corrigido para lucide-react
+} from 'lucide-react';
 import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDocs, query, collection, where } from 'firebase/firestore';
 
 const Definicoes = ({ usuario, configLoja, avisar }) => {
   const [dados, setDados] = useState({
@@ -83,11 +83,27 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
         return;
       }
 
-      // Se não for premium, o slug é limpo ou ignorado
-      const finalSlug = isPremium 
-        ? (dados.slugLoja ? formatarSlug(dados.slugLoja) : formatarSlug(usuario.nomeLoja))
-        : null;
+      // LÓGICA DO SLUG (LINK PERSONALIZADO)
+      let finalSlug = null;
+      if (isPremium) {
+        const baseSlug = dados.slugLoja ? formatarSlug(dados.slugLoja) : formatarSlug(usuario.nomeLoja);
+        
+        // VERIFICAÇÃO DE DUPLICIDADE NO BANCO DE DADOS
+        const qCheck = query(collection(db, "configuracoes"), where("slugLoja", "==", baseSlug));
+        const checkSnap = await getDocs(qCheck);
+        
+        // Se existir um slug igual que não pertença a este usuário (ID diferente)
+        const existeOutro = checkSnap.docs.find(doc => doc.id !== usuario.uid);
+        
+        if (existeOutro) {
+           avisar("ESTE LINK JÁ ESTÁ EM USO. ESCOLHA OUTRO.", "erro");
+           setSalvando(false);
+           return;
+        }
+        finalSlug = baseSlug;
+      }
 
+      // GRAVAÇÃO NO FIRESTORE
       await setDoc(doc(db, "configuracoes", usuario.uid), {
         ...dados,
         slugLoja: finalSlug,
