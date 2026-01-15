@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { sendPasswordResetEmail } from "firebase/auth";
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { 
   Mail, ArrowLeft, Loader2, Send, CheckCircle2, 
-  ShieldAlert, Inbox, KeyRound, Sparkles, ChevronRight 
+  ShieldAlert, KeyRound 
 } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 
@@ -20,19 +20,23 @@ const RecuperarSenha = () => {
   const [otpInput, setOtpInput] = useState('');
 
   useEffect(() => {
-    // Inicializa com a tua chave pública
     emailjs.init("BIe0eA3cQII1mgFcG");
   }, []);
 
-  // FUNÇÃO PARA ENVIAR O CÓDIGO (PASSO 1)
   const enviarCodigoRecuperacao = async (e) => {
     e.preventDefault();
     setCarregando(true);
     setErro('');
 
     try {
-      // 1. Verificar se o utilizador existe no sistema
-      const q = query(collection(db, "usuarios"), where("email", "==", email.trim().toLowerCase()));
+      // 1. Verificar se o utilizador existe (Com limite de 1 para respeitar as novas regras)
+      const usuariosRef = collection(db, "usuarios");
+      const q = query(
+        usuariosRef, 
+        where("email", "==", email.trim().toLowerCase()),
+        limit(1)
+      );
+      
       const snap = await getDocs(q);
 
       if (snap.empty) {
@@ -45,31 +49,34 @@ const RecuperarSenha = () => {
       const novoOtp = Math.floor(100000 + Math.random() * 900000).toString();
       setOtpGerado(novoOtp);
 
-      // 2. Parâmetros para o e-mail
+      // 2. Enviar via EmailJS
       const templateParams = {
-        to_name: dadosUsuario.nome,
+        to_name: dadosUsuario.nome || 'Utilizador',
         to_email: email.trim().toLowerCase(), 
         otp_code: novoOtp,
-        store_name: "Venda Já - Recuperação"
+        store_name: "Venda Já Pro"
       };
 
-      // 3. ENVIO VIA EMAILJS USANDO O NOVO TEMPLATE ESPECÍFICO
       await emailjs.send(
         'service_0jrg1rp', 
-        'template_izqwyeo', // <--- Teu novo Template de Recuperação
+        'template_izqwyeo', 
         templateParams
       );
       
       setPasso(2);
     } catch (err) {
-      console.error("Erro EmailJS:", err);
-      setErro("FALHA AO ENVIAR CÓDIGO. TENTE NOVAMENTE.");
+      console.error("Erro no Processo:", err);
+      // Se for erro de permissão do Firebase, avisar
+      if (err.code === 'permission-denied') {
+        setErro("ERRO DE PERMISSÃO NO SISTEMA. CONTACTE O SUPORTE.");
+      } else {
+        setErro("FALHA AO ENVIAR CÓDIGO. TENTE NOVAMENTE.");
+      }
     } finally {
       setCarregando(false);
     }
   };
 
-  // FUNÇÃO PARA VALIDAR OTP E DISPARAR RESET (PASSO 2)
   const validarOtpERefinir = async () => {
     if (otpInput !== otpGerado) {
       setErro("CÓDIGO DE VERIFICAÇÃO INCORRECTO.");
@@ -80,12 +87,12 @@ const RecuperarSenha = () => {
     setErro('');
 
     try {
-      // 4. Disparar o fluxo oficial do Firebase após validar o PIN
+      // 3. Disparar o Firebase Reset (O link que vai no template do Firebase)
       await sendPasswordResetEmail(auth, email.trim().toLowerCase());
       setPasso(3);
     } catch (err) {
       console.error("Erro Firebase Reset:", err);
-      setErro("ERRO AO GERAR LINK DE SEGURANÇA.");
+      setErro("ERRO AO GERAR LINK DE SEGURANÇA: " + err.code);
     } finally {
       setCarregando(false);
     }
@@ -118,7 +125,7 @@ const RecuperarSenha = () => {
             {passo === 3 && "Sucesso"}
           </h2>
           <p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.2em] mt-3">
-            {passo === 3 ? "Verifique o seu e-mail" : "Proteção de Acesso VendaJá"}
+            {passo === 3 ? "Verifique o seu e-mail" : "Proteção de Acesso VendaJá Pro"}
           </p>
         </div>
 
@@ -176,7 +183,7 @@ const RecuperarSenha = () => {
                 disabled={carregando || otpInput.length < 6}
                 className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase text-[10px] tracking-[0.2em] shadow-xl disabled:opacity-30 transition-all"
               >
-                {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Validar PIN e Redefinir"}
+                {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Validar e Redefinir"}
               </button>
             </div>
           )}
@@ -185,7 +192,7 @@ const RecuperarSenha = () => {
             <div className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4">
               <div className="p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100">
                 <p className="text-emerald-700 text-[10px] font-bold leading-relaxed uppercase tracking-tight">
-                  PIN Validado com sucesso! Agora, abra o seu e-mail e clique no <span className="font-black text-emerald-900">link de redefinição</span> enviado pelo sistema para escolher a nova senha.
+                  PIN Validado! Enviámos agora um <span className="font-black text-emerald-900">e-mail com o link final</span>. Clique nele para escolher a sua nova senha.
                 </p>
               </div>
               
@@ -194,7 +201,7 @@ const RecuperarSenha = () => {
                   to="/login" 
                   className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all block"
                 >
-                  Ir para o Login
+                  Voltar ao Login
                 </Link>
               </div>
             </div>
