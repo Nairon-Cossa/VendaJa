@@ -20,7 +20,7 @@ const RecuperarSenha = () => {
   const [otpInput, setOtpInput] = useState('');
 
   useEffect(() => {
-    // Inicializa com a mesma chave do seu Registo
+    // Inicializa com a tua chave pública
     emailjs.init("BIe0eA3cQII1mgFcG");
   }, []);
 
@@ -45,20 +45,24 @@ const RecuperarSenha = () => {
       const novoOtp = Math.floor(100000 + Math.random() * 900000).toString();
       setOtpGerado(novoOtp);
 
-      // 2. Enviar via EmailJS (Usando o mesmo template do registo ou um de recuperação)
+      // 2. Parâmetros para o e-mail
       const templateParams = {
         to_name: dadosUsuario.nome,
-        to_email: email, 
+        to_email: email.trim().toLowerCase(), 
         otp_code: novoOtp,
-        store_name: "Recuperação de Acesso - VendaJá"
+        store_name: "Venda Já - Recuperação"
       };
 
-      // Nota: Use o seu ServiceID e TemplateID do EmailJS
-      await emailjs.send('service_0jrg1rp', 'template_mhu5m1u', templateParams);
+      // 3. ENVIO VIA EMAILJS USANDO O NOVO TEMPLATE ESPECÍFICO
+      await emailjs.send(
+        'service_0jrg1rp', 
+        'template_izqwyeo', // <--- Teu novo Template de Recuperação
+        templateParams
+      );
       
       setPasso(2);
     } catch (err) {
-      console.error(err);
+      console.error("Erro EmailJS:", err);
       setErro("FALHA AO ENVIAR CÓDIGO. TENTE NOVAMENTE.");
     } finally {
       setCarregando(false);
@@ -73,11 +77,14 @@ const RecuperarSenha = () => {
     }
 
     setCarregando(true);
+    setErro('');
+
     try {
-      // Aqui o Firebase entra para garantir que a troca de senha seja segura
+      // 4. Disparar o fluxo oficial do Firebase após validar o PIN
       await sendPasswordResetEmail(auth, email.trim().toLowerCase());
       setPasso(3);
     } catch (err) {
+      console.error("Erro Firebase Reset:", err);
       setErro("ERRO AO GERAR LINK DE SEGURANÇA.");
     } finally {
       setCarregando(false);
@@ -143,7 +150,7 @@ const RecuperarSenha = () => {
                 disabled={carregando} 
                 className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black shadow-xl flex items-center justify-center gap-3 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50"
               >
-                {carregando ? <Loader2 className="animate-spin" size={20} /> : <span className="uppercase tracking-[0.2em] text-[10px]">Enviar PIN de Acesso</span>}
+                {carregando ? <Loader2 className="animate-spin" size={20} /> : <span className="uppercase tracking-[0.2em] text-[10px]">Enviar PIN de Segurança</span>}
               </button>
             </form>
           )}
@@ -151,7 +158,7 @@ const RecuperarSenha = () => {
           {passo === 2 && (
             <div className="space-y-8 text-center">
               <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">
-                Introduza o código enviado para:<br/>
+                Introduza o código de recuperação enviado para:<br/>
                 <span className="text-blue-600 lowercase">{email}</span>
               </p>
               
@@ -169,7 +176,7 @@ const RecuperarSenha = () => {
                 disabled={carregando || otpInput.length < 6}
                 className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase text-[10px] tracking-[0.2em] shadow-xl disabled:opacity-30 transition-all"
               >
-                {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Verificar e Redefinir"}
+                {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Validar PIN e Redefinir"}
               </button>
             </div>
           )}
@@ -178,7 +185,7 @@ const RecuperarSenha = () => {
             <div className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4">
               <div className="p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100">
                 <p className="text-emerald-700 text-[10px] font-bold leading-relaxed uppercase tracking-tight">
-                  Código validado! Enviámos um <span className="font-black text-emerald-900">link seguro</span> para o seu e-mail para criar a nova senha.
+                  PIN Validado com sucesso! Agora, abra o seu e-mail e clique no <span className="font-black text-emerald-900">link de redefinição</span> enviado pelo sistema para escolher a nova senha.
                 </p>
               </div>
               
@@ -187,7 +194,7 @@ const RecuperarSenha = () => {
                   to="/login" 
                   className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all block"
                 >
-                  Voltar ao Login
+                  Ir para o Login
                 </Link>
               </div>
             </div>
@@ -198,4 +205,4 @@ const RecuperarSenha = () => {
   );
 };
 
-export default RecuperarSenha; 
+export default RecuperarSenha;
