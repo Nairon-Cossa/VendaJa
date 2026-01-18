@@ -21,7 +21,7 @@ import LojaPublica from './pages/LojaPublica';
 import Navbar from './components/Navbar';
 import FechoCaixa from './components/FechoCaixa';
 
-// --- COMPONENTE MOVIDO PARA FORA DO APP (CORREÇÃO ESLINT) ---
+// --- COMPONENTE TELA DE BLOQUEIO ---
 const TelaBloqueio = ({ usuario, fazerLogout, MEU_WHATSAPP }) => {
   const isPendente = usuario?.status === 'pendente';
   const msgWhatsapp = encodeURIComponent(`Olá Nairon! Sou o ${usuario?.nome} da loja ${usuario?.nomeLoja}. Gostaria de ativar o meu acesso ao venda-japro.vercel.app.`);
@@ -80,7 +80,6 @@ function App() {
   };
 
   const isSuperAdmin = usuario?.email === "naironcossa.dev@gmail.com" || usuario?.role === 'superadmin';
-  const isPremium = usuario?.plano === 'premium' || isSuperAdmin;
 
   const [configLoja, setConfigLoja] = useState({
     nuit: '', endereco: '', telefone: '', moeda: 'MT', mensagemRecibo: 'Obrigado!', logo: null
@@ -109,7 +108,6 @@ function App() {
 
   useEffect(() => {
     if (!usuario?.uid) {
-      // Pequeno timeout para evitar renderização em cascata síncrona
       const timer = setTimeout(() => setCarregando(false), 0);
       return () => clearTimeout(timer);
     }
@@ -192,7 +190,10 @@ function App() {
                   <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
                   <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
                   <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
-                  <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) && isPremium ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  
+                  {/* ALTERAÇÃO AQUI: Removido o check 'isPremium' para permitir acesso ilimitado */}
+                  <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  
                   <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
                   <Route path="*" element={<Navigate to={usuario ? (isSuperAdmin ? "/gestao-mestra" : "/") : "/login"} />} />
                 </Routes>

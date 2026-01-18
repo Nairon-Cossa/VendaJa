@@ -2,27 +2,36 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Settings, Store, MapPin, Hash, Phone, Link as LinkIcon,
   Save, Globe, Bell, ShieldCheck, CreditCard, Coins, Upload, Image as ImageIcon, X, Loader2, Crown, ExternalLink,
-  Truck, Wallet, Building2
+  Truck, Wallet, Building2, Briefcase, MessageSquare, Facebook, Instagram
 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, setDoc, getDocs, query, collection, where } from 'firebase/firestore';
 
 const Definicoes = ({ usuario, configLoja, avisar }) => {
   const [dados, setDados] = useState({
-    ...configLoja,
+    nomeOficial: configLoja?.nomeOficial || '',
+    nuit: configLoja?.nuit || '',
+    telefone: configLoja?.telefone || '',
+    endereco: configLoja?.endereco || '',
+    tipoNegocio: configLoja?.tipoNegocio || 'Geral',
+    moeda: configLoja?.moeda || 'MT',
+    // LOGÍSTICA
     slugLoja: configLoja?.slugLoja || '',
     fazEntrega: configLoja?.fazEntrega || false,
     taxaEntrega: configLoja?.taxaEntrega || 0,
     permiteLevantamento: configLoja?.permiteLevantamento !== undefined ? configLoja.permiteLevantamento : true,
+    // PAGAMENTOS
     aceitaMpesa: configLoja?.aceitaMpesa || false,
     numeroMpesa: configLoja?.numeroMpesa || '',
     nomeMpesa: configLoja?.nomeMpesa || '',
     aceitaEmola: configLoja?.aceitaEmola || false,
     numeroEmola: configLoja?.numeroEmola || '',
-    aceitaMkesh: configLoja?.aceitaMkesh || false,
-    numeroMkesh: configLoja?.numeroMkesh || '',
     aceitaBanco: configLoja?.aceitaBanco || false,
-    dadosBancarios: configLoja?.dadosBancarios || ''
+    bancoNome: configLoja?.bancoNome || '',
+    bancoIban: configLoja?.bancoIban || '',
+    // EXTRA RECIBO
+    rodapeRecibo: configLoja?.rodapeRecibo || 'Obrigado pela preferência!',
+    logo: configLoja?.logo || null
   });
 
   const [carregandoImagem, setCarregandoImagem] = useState(false);
@@ -37,15 +46,8 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
     }
   }, [configLoja]);
 
-  // Formata o slug: remove espaços, acentos e caracteres especiais
   const formatarSlug = (texto) => {
-    return texto
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-z0-9-]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+    return texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
   };
 
   const handleLogoUpload = (e) => {
@@ -64,10 +66,9 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
         canvas.height = img.height * scaleSize;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        setDados({ ...dados, logo: dataUrl });
+        setDados({ ...dados, logo: canvas.toDataURL('image/jpeg', 0.8) });
         setCarregandoImagem(false);
-        avisar("IMAGEM PROCESSADA", "sucesso");
+        avisar("LOGO ATUALIZADO", "sucesso");
       };
     };
     reader.readAsDataURL(file);
@@ -78,41 +79,31 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
     setSalvando(true);
     try {
       if (!dados.nuit || !dados.telefone || !dados.endereco) {
-        avisar("NUIT, TELEFONE E ENDEREÇO SÃO OBRIGATÓRIOS", "info");
+        avisar("DADOS ESSENCIAIS EM FALTA", "erro");
         setSalvando(false);
         return;
       }
 
-      // LÓGICA DO SLUG (LINK PERSONALIZADO)
-      let finalSlug = null;
-      if (isPremium) {
-        const baseSlug = dados.slugLoja ? formatarSlug(dados.slugLoja) : formatarSlug(usuario.nomeLoja);
-        
-        // VERIFICAÇÃO DE DUPLICIDADE NO BANCO DE DADOS
-        const qCheck = query(collection(db, "configuracoes"), where("slugLoja", "==", baseSlug));
+      let finalSlug = dados.slugLoja || formatarSlug(usuario.nomeLoja);
+      if (isPremium && dados.slugLoja) {
+        const qCheck = query(collection(db, "configuracoes"), where("slugLoja", "==", dados.slugLoja));
         const checkSnap = await getDocs(qCheck);
-        
-        // Se existir um slug igual que não pertença a este usuário (ID diferente)
         const existeOutro = checkSnap.docs.find(doc => doc.id !== usuario.uid);
-        
         if (existeOutro) {
-           avisar("ESTE LINK JÁ ESTÁ EM USO. ESCOLHA OUTRO.", "erro");
+           avisar("LINK JÁ EM USO POR OUTRA LOJA", "erro");
            setSalvando(false);
            return;
         }
-        finalSlug = baseSlug;
       }
 
-      // GRAVAÇÃO NO FIRESTORE
       await setDoc(doc(db, "configuracoes", usuario.uid), {
         ...dados,
-        slugLoja: finalSlug,
+        slugLoja: isPremium ? finalSlug : '',
         ultimaAtualizacao: new Date().toISOString()
       }, { merge: true });
 
-      avisar("DEFINIÇÕES GUARDADAS", "sucesso");
+      avisar("SISTEMA ATUALIZADO!", "sucesso");
     } catch (error) {
-      console.error(error);
       avisar("ERRO AO GUARDAR", "erro");
     } finally {
       setSalvando(false);
@@ -120,167 +111,219 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
   };
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-6xl mx-auto space-y-8 pb-10">
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto space-y-8 pb-20">
       
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* HEADER DINÂMICO */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
         <div>
           <h2 className="text-4xl font-black text-slate-900 italic uppercase tracking-tighter flex items-center gap-3">
-            Gestão da Unidade {isPremium && <Crown className="text-amber-500" size={28} />}
+            Definições do Sistema {isPremium && <Crown className="text-amber-500 animate-bounce" size={28} />}
           </h2>
-          <p className="text-slate-500 font-bold text-xs uppercase tracking-[0.2em] mt-1">
-            Plano: <span className={isPremium ? "text-amber-600" : "text-blue-600"}>{usuario?.plano?.toUpperCase() || 'BÁSICO'}</span>
+          <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.3em] mt-2 flex items-center gap-2">
+            <ShieldCheck size={14} className="text-emerald-500" /> Unidade de Negócio Verificada
           </p>
         </div>
-        <div className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg">
-          ID: {usuario.uid}
+        <div className="flex items-center gap-4">
+            <div className="text-right hidden md:block">
+                <p className="text-[10px] font-black text-slate-400 uppercase">Estado da Conta</p>
+                <p className={`text-xs font-black ${isPremium ? 'text-amber-600' : 'text-blue-600'}`}>PLANO {usuario?.plano?.toUpperCase()}</p>
+            </div>
+            <div className="h-12 w-[2px] bg-slate-100 hidden md:block"></div>
+            <button onClick={salvarDefinicoes} disabled={salvando} className="bg-blue-600 hover:bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-blue-200 flex items-center gap-3 active:scale-95">
+                {salvando ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                {salvando ? 'A GUARDAR...' : 'Gravar Tudo'}
+            </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-1 space-y-6">
-          {/* LOGOTIPO */}
-          <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 text-center space-y-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logotipo Oficial</p>
-            <div className="relative group mx-auto w-44 h-44">
-              <div className="w-full h-full bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden transition-all group-hover:border-blue-400">
-                {carregandoImagem ? <Loader2 size={32} className="animate-spin text-blue-500" /> : dados.logo ? <img src={dados.logo} alt="Logo" className="w-full h-full object-contain p-4" /> : <ImageIcon size={40} className="text-slate-300" />}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        {/* COLUNA ESQUERDA: BRANDING & LINK */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 text-center">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-6">Identidade Visual</p>
+            <div className="relative group mx-auto w-52 h-52">
+              <div className="w-full h-full bg-slate-50 rounded-[3rem] border-4 border-dashed border-slate-100 flex items-center justify-center overflow-hidden transition-all group-hover:border-blue-200">
+                {carregandoImagem ? <Loader2 size={32} className="animate-spin text-blue-500" /> : dados.logo ? <img src={dados.logo} alt="Logo" className="w-full h-full object-contain p-6" /> : <ImageIcon size={48} className="text-slate-200" />}
               </div>
-              <button type="button" onClick={() => fileInputRef.current.click()} className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all rounded-[2.5rem] flex items-center justify-center text-white flex-col gap-2 backdrop-blur-sm">
-                <Upload size={20} />
-                <span className="text-[8px] font-black uppercase">Carregar Foto</span>
+              <button type="button" onClick={() => fileInputRef.current.click()} className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-all rounded-[3rem] flex items-center justify-center text-white flex-col gap-2 backdrop-blur-sm">
+                <Upload size={24} />
+                <span className="text-[10px] font-black uppercase tracking-tighter">Alterar Logo</span>
               </button>
             </div>
             <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
           </div>
 
-          {/* LINK DA LOJA (SLUG) */}
-          <div className={`p-8 rounded-[3rem] border shadow-sm transition-all ${isPremium ? 'bg-white border-slate-100' : 'bg-slate-50 border-transparent opacity-75'}`}>
-            <div className="flex items-center gap-3 mb-6">
-              <div className={`p-2 rounded-lg ${isPremium ? 'bg-purple-50 text-purple-600' : 'bg-slate-200 text-slate-400'}`}>
-                <LinkIcon size={18} />
-              </div>
-              <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-sm">Link da Loja</h3>
+          <div className={`p-8 rounded-[3rem] border transition-all ${isPremium ? 'bg-slate-900 text-white border-transparent shadow-2xl' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-black uppercase italic tracking-tighter text-sm flex items-center gap-2">
+                <Globe size={18} className="text-blue-400" /> Loja Online
+              </h3>
+              {!isPremium && <Crown size={16} className="text-amber-500" />}
             </div>
-            
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[9px] font-black uppercase text-slate-400 ml-2">URL Personalizada</label>
-                <div className="flex flex-col gap-2">
-                  <input 
-                    disabled={!isPremium}
-                    className="w-full bg-slate-100 p-4 rounded-2xl outline-none border-2 border-transparent focus:border-purple-500 font-bold text-xs transition-all disabled:cursor-not-allowed"
-                    placeholder="ex: minha-loja"
-                    value={dados.slugLoja || ''}
-                    onChange={(e) => setDados({...dados, slugLoja: formatarSlug(e.target.value)})}
-                  />
+              <input 
+                disabled={!isPremium}
+                className="w-full bg-white/10 p-4 rounded-2xl outline-none border border-white/10 focus:border-blue-500 font-bold text-xs transition-all placeholder:text-white/20"
+                placeholder="slug-da-tua-loja"
+                value={dados.slugLoja}
+                onChange={(e) => setDados({...dados, slugLoja: formatarSlug(e.target.value)})}
+              />
+              <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                <p className="text-[8px] text-slate-500 font-black uppercase mb-1">Link Público:</p>
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-mono text-blue-400 truncate">venda-ja.pt/{dados.slugLoja || '...'}</p>
+                    <ExternalLink size={12} className="text-slate-600 flex-shrink-0" />
                 </div>
               </div>
-
-              {isPremium ? (
-                <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800">
-                  <p className="text-[8px] text-slate-400 font-black uppercase mb-1">Visualização:</p>
-                  <p className="text-[10px] font-mono text-blue-300 break-all">
-                    venda-ja.pt/loja/{dados.slugLoja || '...'}
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
-                  <p className="text-[9px] text-amber-700 font-bold leading-tight uppercase">
-                    🔒 Disponível apenas no plano Premium
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        <div className="lg:col-span-3">
-          <form onSubmit={salvarDefinicoes} className="bg-white rounded-[3.5rem] shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-8 md:p-12 space-y-10">
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                {/* IDENTIDADE E CONTACTOS */}
-                <div className="space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black italic">!</div>
-                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Identidade</h3>
-                  </div>
-                  <div className="space-y-4">
-                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
-                      placeholder="Nome no Recibo" value={dados.nomeOficial || ''} onChange={e => setDados({...dados, nomeOficial: e.target.value})} />
-                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
-                      placeholder="NUIT" value={dados.nuit || ''} onChange={e => setDados({...dados, nuit: e.target.value})} />
-                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
-                      placeholder="Telefone / WhatsApp" value={dados.telefone || ''} onChange={e => setDados({...dados, telefone: e.target.value})} />
-                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
-                      placeholder="Endereço Físico" value={dados.endereco || ''} onChange={e => setDados({...dados, endereco: e.target.value})} />
-                  </div>
+        {/* COLUNA DIREITA: CONFIGURAÇÕES CORE */}
+        <div className="lg:col-span-8 space-y-8">
+          
+          {/* SECÇÃO 1: CORE BUSINESS */}
+          <div className="bg-white rounded-[3.5rem] shadow-sm border border-slate-100 p-8 md:p-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <div className="space-y-6">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner"><Store size={20}/></div>
+                  <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-xl">Dados Fiscais</h3>
                 </div>
-
-                <div className="space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center"><Truck size={18}/></div>
-                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Logística</h3>
+                <div className="space-y-4">
+                  <div className="group">
+                    <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Nome Comercial (Recibo)</label>
+                    <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm transition-all"
+                      value={dados.nomeOficial} onChange={e => setDados({...dados, nomeOficial: e.target.value})} />
                   </div>
-                  <div className="space-y-4 bg-slate-50 p-6 rounded-[2.5rem]">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" checked={dados.fazEntrega} onChange={e => setDados({...dados, fazEntrega: e.target.checked})} className="w-5 h-5 accent-blue-600" />
-                      <span className="text-xs font-black uppercase text-slate-700">Fazemos Entregas</span>
-                    </label>
-                    {dados.fazEntrega && (
-                      <input type="number" className="w-full bg-white p-4 rounded-2xl outline-none border border-slate-200 font-bold text-sm"
-                        placeholder="Taxa de Entrega (MT)" value={dados.taxaEntrega} onChange={e => setDados({...dados, taxaEntrega: e.target.value})} />
-                    )}
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input type="checkbox" checked={dados.permiteLevantamento} onChange={e => setDados({...dados, permiteLevantamento: e.target.checked})} className="w-5 h-5 accent-blue-600" />
-                      <span className="text-xs font-black uppercase text-slate-700">Levantamento na Loja</span>
-                    </label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">NUIT</label>
+                        <input className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm transition-all"
+                        value={dados.nuit} onChange={e => setDados({...dados, nuit: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Moeda do Sistema</label>
+                        <select className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-black text-sm transition-all appearance-none"
+                        value={dados.moeda} onChange={e => setDados({...dados, moeda: e.target.value})}>
+                            <option value="MT">MT (Metical)</option>
+                            <option value="USD">USD (Dólar)</option>
+                            <option value="EUR">EUR (Euro)</option>
+                            <option value="ZAR">ZAR (Rand)</option>
+                        </select>
+                    </div>
+                  </div>
+                  <div className="group">
+                    <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Sector de Actividade</label>
+                    <select className="w-full bg-slate-50 p-5 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-500 font-black text-sm transition-all appearance-none"
+                      value={dados.tipoNegocio} onChange={e => setDados({...dados, tipoNegocio: e.target.value})}>
+                        <option value="Geral">🛒 Comércio Geral</option>
+                        <option value="Mercearia">🍏 Mercearia / Super</option>
+                        <option value="Restaurante/Bar">🍔 Restaurante / Bar</option>
+                        <option value="Oficina">🔧 Oficina Mecânica</option>
+                        <option value="Farmácia">💊 Farmácia</option>
+                    </select>
                   </div>
                 </div>
               </div>
 
-              {/* MÉTODOS DE PAGAMENTO */}
-              {isPremium && (
-                <div className="pt-6 border-t border-slate-100 space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-pink-50 text-pink-600 rounded-xl flex items-center justify-center"><Wallet size={18}/></div>
-                    <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-lg">Pagamentos Aceites</h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className={`p-6 rounded-[2.5rem] transition-all border-2 ${dados.aceitaMpesa ? 'bg-white border-pink-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
-                      <label className="flex items-center gap-3 cursor-pointer mb-4">
-                        <input type="checkbox" checked={dados.aceitaMpesa} onChange={e => setDados({...dados, aceitaMpesa: e.target.checked})} className="w-5 h-5 accent-pink-600" />
-                        <span className="text-xs font-black uppercase text-pink-700">M-Pesa</span>
-                      </label>
-                      {dados.aceitaMpesa && (
-                        <div className="space-y-3">
-                          <input className="w-full bg-slate-50 p-3 rounded-xl outline-none border border-slate-200 text-sm font-bold" placeholder="Número M-Pesa" value={dados.numeroMpesa} onChange={e => setDados({...dados, numeroMpesa: e.target.value})} />
-                          <input className="w-full bg-slate-50 p-3 rounded-xl outline-none border border-slate-200 text-sm font-bold" placeholder="Nome Titular" value={dados.nomeMpesa} onChange={e => setDados({...dados, nomeMpesa: e.target.value})} />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className={`p-6 rounded-[2.5rem] transition-all border-2 ${dados.aceitaEmola ? 'bg-white border-orange-200 shadow-sm' : 'bg-slate-50 border-transparent opacity-60'}`}>
-                      <label className="flex items-center gap-3 cursor-pointer mb-4">
-                        <input type="checkbox" checked={dados.aceitaEmola} onChange={e => setDados({...dados, aceitaEmola: e.target.checked})} className="w-5 h-5 accent-orange-600" />
-                        <span className="text-xs font-black uppercase text-orange-700">e-Mola</span>
-                      </label>
-                      {dados.aceitaEmola && (
-                        <input className="w-full bg-slate-50 p-3 rounded-xl outline-none border border-slate-200 text-sm font-bold" placeholder="Número e-Mola" value={dados.numeroEmola} onChange={e => setDados({...dados, numeroEmola: e.target.value})} />
-                      )}
-                    </div>
-                  </div>
+              <div className="space-y-6">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-2xl flex items-center justify-center shadow-inner"><Truck size={20}/></div>
+                  <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-xl">Logística</h3>
                 </div>
-              )}
-
-              <button type="submit" disabled={salvando} className={`w-full py-8 rounded-[2.5rem] font-black flex items-center justify-center gap-4 transition-all active:scale-95 shadow-2xl ${salvando ? 'bg-slate-100 text-slate-400' : 'bg-blue-600 text-white hover:bg-slate-900 shadow-blue-200'}`}>
-                {salvando ? <Loader2 className="animate-spin" /> : <Save size={24} />}
-                <span className="uppercase tracking-[0.3em] text-xs">{salvando ? 'A Sincronizar...' : 'Gravar Alterações'}</span>
-              </button>
+                <div className="space-y-4 bg-slate-50 p-8 rounded-[3rem] border border-slate-100">
+                  <label className="flex items-center justify-between cursor-pointer group">
+                    <span className="text-xs font-black uppercase text-slate-700 group-hover:text-blue-600 transition-colors">Entrega ao Domicílio</span>
+                    <input type="checkbox" checked={dados.fazEntrega} onChange={e => setDados({...dados, fazEntrega: e.target.checked})} className="w-6 h-6 accent-blue-600" />
+                  </label>
+                  {dados.fazEntrega && (
+                    <div className="animate-in zoom-in-95 duration-200">
+                        <label className="text-[9px] font-black uppercase text-slate-400 ml-2 mb-1 block">Taxa Fixa ({dados.moeda})</label>
+                        <input type="number" className="w-full bg-white p-4 rounded-2xl outline-none border border-slate-200 font-black text-sm text-blue-600"
+                        value={dados.taxaEntrega} onChange={e => setDados({...dados, taxaEntrega: e.target.value})} />
+                    </div>
+                  )}
+                  <div className="h-[1px] bg-slate-200 my-2"></div>
+                  <label className="flex items-center justify-between cursor-pointer group">
+                    <span className="text-xs font-black uppercase text-slate-700 group-hover:text-blue-600 transition-colors">Levantamento Local</span>
+                    <input type="checkbox" checked={dados.permiteLevantamento} onChange={e => setDados({...dados, permiteLevantamento: e.target.checked})} className="w-6 h-6 accent-blue-600" />
+                  </label>
+                </div>
+              </div>
             </div>
-          </form>
+
+            {/* SECÇÃO 2: FINANCEIRA & PAGAMENTOS */}
+            <div className="mt-12 pt-12 border-t border-slate-100">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-12 h-12 bg-pink-50 text-pink-600 rounded-2xl flex items-center justify-center shadow-inner"><CreditCard size={20}/></div>
+                  <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-xl">Configuração de Pagamentos</h3>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* MPESA */}
+                    <div className={`p-6 rounded-[2.5rem] border-2 transition-all ${dados.aceitaMpesa ? 'bg-pink-50/30 border-pink-200 shadow-xl' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                        <label className="flex items-center gap-3 mb-4 cursor-pointer">
+                            <input type="checkbox" checked={dados.aceitaMpesa} onChange={e => setDados({...dados, aceitaMpesa: e.target.checked})} className="w-5 h-5 accent-pink-600" />
+                            <span className="text-xs font-black uppercase text-pink-700 italic">M-Pesa</span>
+                        </label>
+                        {dados.aceitaMpesa && (
+                            <div className="space-y-2 animate-in fade-in">
+                                <input className="w-full bg-white p-3 rounded-xl border border-pink-100 text-[11px] font-bold outline-none focus:border-pink-400" placeholder="84XXXXXXX" value={dados.numeroMpesa} onChange={e => setDados({...dados, numeroMpesa: e.target.value})} />
+                                <input className="w-full bg-white p-3 rounded-xl border border-pink-100 text-[11px] font-bold outline-none focus:border-pink-400" placeholder="Nome do Agente" value={dados.nomeMpesa} onChange={e => setDados({...dados, nomeMpesa: e.target.value})} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* EMOLA */}
+                    <div className={`p-6 rounded-[2.5rem] border-2 transition-all ${dados.aceitaEmola ? 'bg-orange-50/30 border-orange-200 shadow-xl' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                        <label className="flex items-center gap-3 mb-4 cursor-pointer">
+                            <input type="checkbox" checked={dados.aceitaEmola} onChange={e => setDados({...dados, aceitaEmola: e.target.checked})} className="w-5 h-5 accent-orange-600" />
+                            <span className="text-xs font-black uppercase text-orange-700 italic">e-Mola</span>
+                        </label>
+                        {dados.aceitaEmola && (
+                            <input className="w-full bg-white p-3 rounded-xl border border-orange-100 text-[11px] font-bold outline-none focus:border-orange-400 animate-in fade-in" placeholder="86XXXXXXX" value={dados.numeroEmola} onChange={e => setDados({...dados, numeroEmola: e.target.value})} />
+                        )}
+                    </div>
+
+                    {/* BANCO */}
+                    <div className={`p-6 rounded-[2.5rem] border-2 transition-all ${dados.aceitaBanco ? 'bg-blue-50/30 border-blue-200 shadow-xl' : 'bg-slate-50 border-transparent opacity-60'}`}>
+                        <label className="flex items-center gap-3 mb-4 cursor-pointer">
+                            <input type="checkbox" checked={dados.aceitaBanco} onChange={e => setDados({...dados, aceitaBanco: e.target.checked})} className="w-5 h-5 accent-blue-600" />
+                            <span className="text-xs font-black uppercase text-blue-700 italic">Transferência</span>
+                        </label>
+                        {dados.aceitaBanco && (
+                            <div className="space-y-2 animate-in fade-in">
+                                <input className="w-full bg-white p-3 rounded-xl border border-blue-100 text-[11px] font-bold outline-none focus:border-blue-400" placeholder="Nome do Banco" value={dados.bancoNome} onChange={e => setDados({...dados, bancoNome: e.target.value})} />
+                                <input className="w-full bg-white p-3 rounded-xl border border-blue-100 text-[11px] font-bold outline-none focus:border-blue-400" placeholder="IBAN / NIB" value={dados.bancoIban} onChange={e => setDados({...dados, bancoIban: e.target.value})} />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* SECÇÃO 3: PERSONALIZAÇÃO DE SAÍDA (RECIBO) */}
+            <div className="mt-12 pt-12 border-t border-slate-100">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center shadow-inner"><MessageSquare size={20}/></div>
+                  <h3 className="font-black text-slate-900 uppercase italic tracking-tighter text-xl">Mensagens no Recibo</h3>
+                </div>
+                <div className="bg-slate-900 p-8 rounded-[3rem] text-white">
+                    <label className="text-[10px] font-black uppercase text-white/40 ml-4 mb-2 block">Rodapé das Faturas / Recibos</label>
+                    <textarea 
+                        className="w-full bg-white/5 border border-white/10 rounded-[2rem] p-6 text-sm font-bold outline-none focus:border-purple-500 transition-all min-h-[120px] resize-none"
+                        placeholder="Ex: Não aceitamos devoluções após 24h. Obrigado por comprar connosco!"
+                        value={dados.rodapeRecibo}
+                        onChange={e => setDados({...dados, rodapeRecibo: e.target.value})}
+                    />
+                    <div className="flex items-center gap-2 mt-4 text-[9px] font-black text-emerald-400 uppercase italic">
+                        <ShieldCheck size={12}/> Esta mensagem aparecerá no fim de cada documento A4 gerado.
+                    </div>
+                </div>
+            </div>
+
+          </div>
         </div>
       </div>
     </div>
