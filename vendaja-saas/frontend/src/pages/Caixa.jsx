@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
   Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Hash, Clock, 
-  CreditCard, Building2, Percent, Calculator, User, MapPin, FileText
+  CreditCard, Building2, Percent, Calculator, User, MapPin, FileText, ShoppingBag
 } from 'lucide-react';
 import ReciboA4 from '../components/ReciboA4'; // Certifica-te que o nome do ficheiro está correto
 
