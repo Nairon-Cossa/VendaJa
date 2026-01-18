@@ -1,33 +1,31 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { db } from '../firebase'; // Garante que o caminho está certo
+import { db } from '../firebase'; 
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
-import { X, Printer, Banknote, CreditCard, ShoppingBag, PieChart, Smartphone, Clock, Loader2 } from 'lucide-react';
+import { 
+  X, Printer, Banknote, Smartphone, Clock, Loader2, 
+  ShoppingBag, PieChart, Calendar, User, Building2 
+} from 'lucide-react';
 
 const FechoCaixa = ({ fechar, usuario }) => {
   const [vendasDoDia, setVendasDoDia] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. BUSCAR DADOS REAIS DO FIREBASE
+  // 1. BUSCAR DADOS DO FIREBASE (Lógica mantida)
   useEffect(() => {
     const buscarVendasHoje = async () => {
       try {
-        const hoje = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        
-        // Dica: Em produção, o ideal é usar timestamps, mas para começar string serve
+        const hoje = new Date().toISOString().split('T')[0];
         const q = query(
           collection(db, "vendas"),
           where("lojaId", "==", usuario.lojaId),
           where("vendedorId", "==", usuario.uid),
-          // Nota: Firestore não permite filtro de string 'startsWith' nativo facilmente, 
-          // então filtramos no cliente ou usamos intervalo de datas.
-          // Aqui busco as últimas 100 e filtro no JS para simplificar o teu código agora.
           orderBy("data", "desc") 
         );
 
         const querySnapshot = await getDocs(q);
         const vendas = querySnapshot.docs
           .map(doc => doc.data())
-          .filter(v => v.data.startsWith(hoje)); // Filtra apenas hoje
+          .filter(v => v.data.startsWith(hoje));
 
         setVendasDoDia(vendas);
       } catch (error) {
@@ -40,7 +38,7 @@ const FechoCaixa = ({ fechar, usuario }) => {
     buscarVendasHoje();
   }, [usuario]);
 
-  // 2. TOTALIZAR TODOS OS MÉTODOS (Incluindo e-Mola e Fiado)
+  // 2. CÁLCULOS (Lógica mantida)
   const resumo = useMemo(() => {
     return vendasDoDia.reduce((acc, v) => {
       const valor = Number(v.total) || 0;
@@ -50,153 +48,126 @@ const FechoCaixa = ({ fechar, usuario }) => {
       else if (v.metodo === 'e-Mola') acc.emola += valor;
       else if (v.metodo === 'Aberto') acc.fiado += valor;
       
-      // Se não for Fiado, entra no dinheiro em caixa real
-      if (v.metodo !== 'Aberto') {
-        acc.totalCaixa += valor;
-      }
+      if (v.metodo !== 'Aberto') acc.totalCaixa += valor;
       
       acc.totalGeral += valor;
       return acc;
     }, { dinheiro: 0, mpesa: 0, emola: 0, fiado: 0, totalCaixa: 0, totalGeral: 0 });
   }, [vendasDoDia]);
 
-  const imprimirFecho = () => {
-    window.print();
-  };
-
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[200]">
-        <div className="bg-white p-6 rounded-2xl flex items-center gap-3">
-          <Loader2 className="animate-spin text-blue-600" />
-          <span className="font-bold text-slate-700">A calcular fecho...</span>
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[200]">
+        <div className="bg-white p-8 rounded-[2rem] flex flex-col items-center gap-4 shadow-2xl">
+          <Loader2 className="animate-spin text-blue-600" size={40} />
+          <span className="font-black text-slate-700 uppercase tracking-widest text-xs">Processando Relatório...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 z-[200]">
+    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 z-[200] overflow-y-auto">
       
-      {/* CSS PARA IMPRESSÃO PERFEITA */}
+      {/* ESTILO DE IMPRESSÃO */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           body * { visibility: hidden; }
           #area-impressao, #area-impressao * { visibility: visible; }
           #area-impressao {
-            position: fixed;
+            position: absolute;
             left: 0;
             top: 0;
             width: 100%;
-            height: auto;
-            margin: 0;
-            padding: 20px;
             box-shadow: none !important;
-            border-radius: 0 !important;
+            border: none !important;
           }
-          /* Esconde botões na impressão */
           .print-hidden { display: none !important; }
         }
       `}} />
 
-      <div id="area-impressao" className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+      <div id="area-impressao" className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden border border-white/20 animate-in zoom-in-95 duration-300">
         
-        {/* CABEÇALHO (Botão X esconde na impressão) */}
-        <div className="p-6 border-b bg-slate-50 flex justify-between items-center print-hidden">
-          <h3 className="text-xl font-black italic text-slate-800 uppercase tracking-tighter">Relatório do Dia</h3>
-          <button onClick={fechar} className="p-2 hover:bg-slate-200 rounded-full transition-all text-slate-500 hover:text-red-500">
-            <X size={20} />
-          </button>
+        {/* HEADER PROFISSIONAL */}
+        <div className="p-10 bg-slate-900 text-white flex justify-between items-center relative overflow-hidden">
+            <div className="relative z-10">
+              <h3 className="text-3xl font-black uppercase italic tracking-tighter">Relatório de Fecho</h3>
+              <p className="text-blue-400 font-bold text-xs uppercase tracking-widest mt-1 flex items-center gap-2">
+                <PieChart size={14}/> Sumário Consolidado de Vendas
+              </p>
+            </div>
+            <button onClick={fechar} className="relative z-10 p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all print-hidden">
+              <X size={24} />
+            </button>
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-blue-600/20 rounded-full blur-3xl"></div>
         </div>
 
-        {/* CONTEÚDO DO RELATÓRIO */}
-        <div className="p-8 space-y-6">
-          <div className="text-center space-y-1 pb-6 border-b border-dashed border-slate-200">
-            <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900">{usuario.nomeLoja || "MINHA LOJA"}</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
-              Relatório de Fecho (Z)
-            </p>
-            <p className="text-sm font-medium text-slate-600">
-              {new Date().toLocaleDateString('pt-MZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </p>
-          </div>
-
-          {/* GRID DE VALORES */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Dinheiro */}
-            <div className="bg-emerald-50 p-5 rounded-[1.5rem] border border-emerald-100">
-              <div className="flex items-center gap-2 mb-2 opacity-70">
-                <Banknote className="text-emerald-700" size={16} />
-                <p className="text-[9px] font-black text-emerald-800 uppercase">Dinheiro</p>
-              </div>
-              <h4 className="text-xl font-black text-emerald-900 tracking-tight">{resumo.dinheiro.toFixed(2)}</h4>
+        <div className="p-10 space-y-8">
+          {/* INFO DA LOJA / CONTEXTO */}
+          <div className="flex justify-between items-end border-b border-slate-100 pb-8">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
+                <Building2 size={12}/> Ponto de Venda
+              </p>
+              <h2 className="text-xl font-black text-slate-900 uppercase">{usuario.nomeLoja || "SISTEMA POS"}</h2>
+              <p className="text-sm font-medium text-slate-500 uppercase flex items-center gap-2 mt-1">
+                <Calendar size={14}/> {new Date().toLocaleDateString('pt-MZ', { dateStyle: 'full' })}
+              </p>
             </div>
-
-            {/* M-Pesa */}
-            <div className="bg-red-50 p-5 rounded-[1.5rem] border border-red-100">
-              <div className="flex items-center gap-2 mb-2 opacity-70">
-                <Smartphone className="text-red-600" size={16} />
-                <p className="text-[9px] font-black text-red-800 uppercase">M-Pesa</p>
-              </div>
-              <h4 className="text-xl font-black text-red-900 tracking-tight">{resumo.mpesa.toFixed(2)}</h4>
-            </div>
-
-            {/* E-Mola */}
-            <div className="bg-orange-50 p-5 rounded-[1.5rem] border border-orange-100">
-              <div className="flex items-center gap-2 mb-2 opacity-70">
-                <Smartphone className="text-orange-600" size={16} />
-                <p className="text-[9px] font-black text-orange-800 uppercase">e-Mola</p>
-              </div>
-              <h4 className="text-xl font-black text-orange-900 tracking-tight">{resumo.emola.toFixed(2)}</h4>
-            </div>
-
-            {/* Fiado / Pendente */}
-            <div className="bg-slate-100 p-5 rounded-[1.5rem] border border-slate-200">
-              <div className="flex items-center gap-2 mb-2 opacity-70">
-                <Clock className="text-slate-600" size={16} />
-                <p className="text-[9px] font-black text-slate-800 uppercase">Aberto/Fiado</p>
-              </div>
-              <h4 className="text-xl font-black text-slate-900 tracking-tight">{resumo.fiado.toFixed(2)}</h4>
+            <div className="text-right">
+                <p className="text-[10px] font-black text-slate-400 uppercase mb-1 flex items-center justify-end gap-2">
+                  <User size={12}/> Operador
+                </p>
+                <p className="font-black text-slate-900 uppercase italic">{usuario.nome}</p>
             </div>
           </div>
 
-          {/* TOTALIZADORES */}
-          <div className="space-y-3 pt-4 border-t-2 border-slate-900">
-            <div className="flex justify-between items-center text-slate-500 font-bold text-xs uppercase">
-              <span className="flex items-center gap-2"><ShoppingBag size={14}/> Qtd. Vendas</span>
-              <span>{vendasDoDia.length}</span>
-            </div>
-            
-            {/* Total Real (O que entrou no bolso) */}
-            <div className="flex justify-between items-center text-emerald-700 font-bold text-sm uppercase bg-emerald-50/50 p-2 rounded-lg">
-              <span>Total em Caixa:</span>
-              <span>{resumo.totalCaixa.toFixed(2)} MT</span>
-            </div>
-
-            {/* Total Geral (Incluindo Fiado) */}
-            <div className="flex justify-between items-end text-slate-900 font-black text-3xl pt-1">
-              <span className="flex items-center gap-2 text-sm uppercase tracking-wide opacity-60">
-                 <PieChart size={18}/> Faturação
-              </span>
-              <span className="italic tracking-tighter">{resumo.totalGeral.toFixed(2)} <small className="text-sm">MT</small></span>
-            </div>
+          {/* VALORES POR CANAL (GRID) */}
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              { label: 'Dinheiro (Em Mão)', valor: resumo.dinheiro, icon: <Banknote size={20}/>, color: 'emerald', bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-600' },
+              { label: 'M-Pesa (Mobile)', valor: resumo.mpesa, icon: <Smartphone size={20}/>, color: 'red', bg: 'bg-red-50', border: 'border-red-100', text: 'text-red-600' },
+              { label: 'e-Mola (Mobile)', valor: resumo.emola, icon: <Smartphone size={20}/>, color: 'orange', bg: 'bg-orange-50', border: 'border-orange-100', text: 'text-orange-600' },
+              { label: 'Contas Correntes (Fiado)', valor: resumo.fiado, icon: <Clock size={20}/>, color: 'slate', bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-600' }
+            ].map((card, i) => (
+              <div key={i} className={`p-6 rounded-[2rem] border ${card.border} ${card.bg}`}>
+                <div className={`${card.text} mb-3`}>{card.icon}</div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{card.label}</p>
+                <h4 className="text-2xl font-black text-slate-900 tracking-tighter tabular-nums">
+                  {card.valor.toFixed(2)} <small className="text-[10px] opacity-40">MT</small>
+                </h4>
+              </div>
+            ))}
           </div>
 
-          {/* RODAPÉ DO RECIBO */}
-          <div className="text-center pt-6 opacity-40">
-            <p className="text-[9px] font-black uppercase tracking-[0.3em] mb-1">Operador: {usuario.nome}</p>
-            <p className="text-[8px] font-medium">Processado em: {new Date().toLocaleTimeString()}</p>
+          {/* RESUMO FINAL (DARK CARD) */}
+          <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white flex justify-between items-center shadow-2xl shadow-blue-900/20">
+              <div>
+                <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.3em] mb-2">Total em Caixa Líquido</p>
+                <h3 className="text-4xl font-black italic tracking-tighter tabular-nums">
+                  {resumo.totalCaixa.toFixed(2)} <small className="text-sm opacity-50 uppercase">MT</small>
+                </h3>
+              </div>
+              <div className="text-right border-l border-white/10 pl-8">
+                <p className="text-white/40 text-[10px] font-black uppercase mb-1">Faturação Bruta</p>
+                <p className="text-xl font-bold opacity-80">{resumo.totalGeral.toFixed(2)}</p>
+                <p className="text-[10px] font-black text-blue-400 mt-1 flex items-center justify-end gap-2">
+                  <ShoppingBag size={12}/> {vendasDoDia.length} DOCUMENTOS
+                </p>
+              </div>
           </div>
-        </div>
 
-        {/* ACÇÕES (Escondido na impressão) */}
-        <div className="p-6 bg-slate-50 flex gap-4 print-hidden">
+          {/* BOTÃO DE IMPRESSÃO */}
           <button 
-            onClick={imprimirFecho}
-            className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl hover:scale-[1.02] active:scale-95"
+            onClick={() => window.print()}
+            className="w-full bg-slate-100 text-slate-900 py-6 rounded-[2rem] font-black uppercase tracking-[0.2em] hover:bg-slate-900 hover:text-white transition-all flex items-center justify-center gap-3 print-hidden shadow-sm"
           >
-            <Printer size={18} /> IMPRIMIR FECHO
+            <Printer size={20} /> Imprimir Relatório de Fecho
           </button>
+          
+          <p className="text-center text-[9px] font-bold text-slate-300 uppercase tracking-[0.5em] print:block hidden">
+            Documento Processado por Computador
+          </p>
         </div>
       </div>
     </div>

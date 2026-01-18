@@ -9,7 +9,7 @@ import {
   Wifi,
   WifiOff,
   Settings,
-  Clock // Importado para o ícone de Fiados
+  Clock 
 } from 'lucide-react';
 
 const Navbar = ({ usuario, fazerLogout, isOnline }) => {
@@ -17,7 +17,7 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
   
   const isActive = (path) => location.pathname === path;
   
-  // Lógica para mostrar funcionalidades Premium
+  // Lógica para mostrar funcionalidades restritas (ex: Venda Online no Inventário)
   const isPremium = usuario?.plano === 'premium' || usuario?.role === 'superadmin' || usuario?.email === "naironcossa.dev@gmail.com";
 
   return (
@@ -53,12 +53,10 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
               <ShoppingCart size={18} /> Vender
             </Link>
 
-            {/* LINK DE FIADOS (Apenas visível para Premium) */}
-            {isPremium && (
-              <Link to="/fiados" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/fiados') ? 'bg-amber-50 text-amber-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <Clock size={18} /> Fiados
-              </Link>
-            )}
+            {/* LINK DE FIADOS - Agora liberado para todos os planos */}
+            <Link to="/fiados" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/fiados') ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <Clock size={18} /> Fiados
+            </Link>
             
             <Link to="/inventario" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/inventario') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
               <Package size={18} /> Stock
@@ -77,7 +75,7 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
         <div className="flex items-center gap-4">
           <div className="hidden sm:flex flex-col items-end border-r border-slate-100 pr-6">
             <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em] mb-1">
-              {usuario.plano === 'premium' ? '👑 Premium' : (usuario.tipoNegocio || 'Empresa')}
+              {usuario.plano === 'premium' ? '👑 Premium' : (usuario.tipoNegocio || 'Plano Básico')}
             </span>
             <span className="text-sm font-black text-slate-800">
               {usuario.nome}

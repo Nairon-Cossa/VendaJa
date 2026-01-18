@@ -8,7 +8,7 @@ import {
   Search, Calendar, Trash2, Printer, 
   FileText, Smartphone, Banknote, TrendingUp, Clock, AlertTriangle
 } from 'lucide-react';
-import Recibo from '../components/Recibo';
+import Recibo from '../components/ReciboA4';
 
 const Historico = ({ produtos, usuario, configLoja, avisar }) => {
   const [pesquisa, setPesquisa] = useState('');

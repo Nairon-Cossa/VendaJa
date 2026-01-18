@@ -3,18 +3,16 @@ import { db } from '../firebase';
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
   Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Hash, Clock, 
-  CreditCard, Building2, Percent, Calculator
+  CreditCard, Building2, Percent, Calculator, User, MapPin, FileText
 } from 'lucide-react';
-import Recibo from '../components/Recibo';
+import ReciboA4 from '../components/ReciboA4'; // Certifica-te que o nome do ficheiro está correto
 
 const REGRAS_SETOR = {
-  'Mercearia': { labelExtra: "Cliente", placeholder: "Nome do Cliente (Opcional)", botaoAcao: "CONCLUIR VENDA" },
+  'Mercearia': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR VENDA" },
   'Restaurante/Bar': { labelExtra: "Mesa/Comando", placeholder: "Ex: Mesa 05", botaoAcao: "PAGAR AGORA" },
-  'Bar/Bottle Store': { labelExtra: "Cliente", placeholder: "Nome ou Alcunha", botaoAcao: "PAGAR AGORA" },
   'Oficina': { labelExtra: "Viatura", placeholder: "Matrícula ou Modelo", botaoAcao: "PAGAR AGORA" },
   'Farmácia': { labelExtra: "Paciente", placeholder: "Nome do Paciente", botaoAcao: "CONCLUIR VENDA" },
-  'Eletrónicos': { labelExtra: "Garantia/IMEI", placeholder: "Nº de Série ou Cliente", botaoAcao: "CONCLUIR VENDA" },
-  'Loja de Roupa': { labelExtra: "Provador", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR VENDA" }
+  'Geral': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR VENDA" }
 };
 
 const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
@@ -24,18 +22,22 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   // ESTADOS FINANCEIROS
   const [metodo, setMetodo] = useState('Dinheiro');
   const [referencia, setReferencia] = useState('');
-  const [desconto, setDesconto] = useState(''); // Novo: Desconto em Valor
-  const [aplicarIva, setAplicarIva] = useState(false); // Novo: Toggle IVA
+  const [desconto, setDesconto] = useState('');
+  const [aplicarIva, setAplicarIva] = useState(false);
   const [valorRecebido, setValorRecebido] = useState(''); 
   
+  // DADOS DO CLIENTE (PARA O RECIBO A4)
+  const [nomeCliente, setNomeCliente] = useState('');
+  const [nuitCliente, setNuitCliente] = useState('');
+  const [enderecoCliente, setEnderecoCliente] = useState('');
+
   const [vendaFinalizada, setVendaFinalizada] = useState(null);
-  const [infoExtra, setInfoExtra] = useState('');
   const [carregando, setCarregando] = useState(false);
   
   const inputPesquisa = useRef(null);
-  const config = REGRAS_SETOR[usuario.tipoNegocio] || REGRAS_SETOR['Mercearia'];
+  const config = REGRAS_SETOR[usuario.tipoNegocio] || REGRAS_SETOR['Geral'];
 
-  // CÁLCULOS MATEMÁTICOS (PRIMAVERA STYLE)
+  // CÁLCULOS
   const subtotal = carrinho.reduce((acc, item) => acc + (Number(item.preco) * item.qtd), 0);
   const valorDesconto = Number(desconto) || 0;
   const baseTributavel = Math.max(0, subtotal - valorDesconto);
@@ -74,16 +76,8 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const finalizarVenda = async () => {
     if (carrinho.length === 0 || carregando) return;
     
-    // Validação de pagamentos móveis/bancários
-    const metodosComRef = ['M-Pesa', 'e-Mola', 'mKesh', 'Transferência'];
-    if (metodosComRef.includes(metodo) && !referencia) {
-        avisar(`INSIRA A REFERÊNCIA (${metodo.toUpperCase()})`, "erro");
-        return;
-    }
-
-    // Validação de Troco negativo
-    if (metodo === 'Dinheiro' && (Number(valorRecebido) < totalFinal) && valorRecebido !== '') {
-        avisar("VALOR RECEBIDO MENOR QUE O TOTAL", "erro");
+    if (['M-Pesa', 'e-Mola', 'Transferência'].includes(metodo) && !referencia) {
+        avisar(`INSIRA A REFERÊNCIA DO PAGAMENTO`, "erro");
         return;
     }
 
@@ -99,52 +93,40 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
         vendedorId: usuario.uid,
         vendedorNome: usuario.nome,
         lojaNome: usuario.nomeLoja,
-        configRecibo: {
-            nuit: configLoja.nuit || '',
-            telefone: configLoja.telefone || '',
-            endereco: configLoja.endereco || '',
-            logo: configLoja.logo || null,
-            mensagem: configLoja.mensagemRecibo || ''
-        },
+        // DADOS DO CLIENTE
+        infoAdicional: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
+        clienteNuit: nuitCliente,
+        clienteEndereco: enderecoCliente,
         itens: carrinho.map(item => ({
           id: item.id,
           nome: item.nome,
           preco: Number(item.preco),
           qtd: item.qtd
         })),
-        // DADOS FINANCEIROS COMPLETOS
-        subtotal: subtotal,
+        subtotal,
         desconto: valorDesconto,
-        imposto: valorIva, // Valor monetário do IVA
-        taxaImposto: aplicarIva ? 16 : 0, // % do IVA
+        imposto: valorIva,
         total: totalFinal,
-        
         metodo,
         status: metodo === 'Aberto' ? 'PENDENTE' : 'PAGO',
         referencia: referencia.toUpperCase(),
         valorRecebido: Number(valorRecebido) || totalFinal,
         troco: (Number(valorRecebido) - totalFinal) > 0 ? (Number(valorRecebido) - totalFinal) : 0,
-        infoAdicional: infoExtra.toUpperCase(),
         data: new Date().toISOString(),
         timestamp: serverTimestamp()
       };
 
       batch.set(vendaRef, dadosVenda);
-
-      // Atualizar Stock
       carrinho.forEach(item => {
         const produtoRef = doc(db, "produtos", item.id);
         batch.update(produtoRef, { stock: increment(-item.qtd) });
       });
 
       await batch.commit();
-      
       setVendaFinalizada(dadosVenda);
-      avisar("VENDA REGISTADA COM SUCESSO!", "sucesso");
-
+      avisar("VENDA REGISTADA!", "sucesso");
     } catch (error) {
-      console.error("Erro:", error);
-      avisar("ERRO AO SALVAR VENDA", "erro");
+      avisar("ERRO AO SALVAR", "erro");
     } finally {
       setCarregando(false);
     }
@@ -152,44 +134,41 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
 
   return (
     <>
-      <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-140px)] animate-in fade-in zoom-in-95 duration-500">
+      <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-120px)] overflow-hidden">
         
-        {/* ESQUERDA: PRODUTOS */}
-        <div className="flex-1 bg-white rounded-[2.5rem] shadow-xl border border-slate-100 flex flex-col overflow-hidden">
-          <div className="p-6 border-b flex items-center gap-4">
-            <div className="relative flex-1 group">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={22} />
+        {/* LADO ESQUERDO: LISTA DE PRODUTOS */}
+        <div className="flex-1 bg-slate-50 rounded-[2.5rem] flex flex-col overflow-hidden border border-slate-200">
+          <div className="p-4 bg-white border-b">
+            <div className="relative group">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
               <input 
                 ref={inputPesquisa}
-                className="w-full bg-slate-100/50 p-5 pl-14 rounded-2xl outline-none font-bold text-slate-700 focus:bg-white focus:ring-4 ring-blue-50 transition-all border-2 border-transparent focus:border-blue-200"
-                placeholder="Pesquisar produto ou ref..."
+                className="w-full bg-slate-100 p-4 pl-14 rounded-2xl outline-none font-bold text-slate-700 focus:bg-white focus:ring-4 ring-blue-50 transition-all border-2 border-transparent focus:border-blue-200"
+                placeholder="Pesquisar produto ou código..."
                 value={pesquisa}
                 onChange={e => setPesquisa(e.target.value)}
               />
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 bg-slate-50/50">
+          <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
             {produtosDaLoja.map(p => (
               <button 
                 key={p.id} 
                 onClick={() => adicionarAoCarrinho(p)} 
                 disabled={p.stock <= 0}
-                className={`group p-4 rounded-[2rem] border-2 transition-all text-left h-48 flex flex-col justify-between ${p.stock <= 0 ? 'bg-slate-100 opacity-60' : 'bg-white border-transparent hover:border-blue-500 hover:shadow-2xl hover:-translate-y-1 active:scale-95 shadow-sm'}`}
+                className={`group p-3 rounded-[1.8rem] border-2 transition-all text-left flex flex-col justify-between h-40 ${p.stock <= 0 ? 'bg-slate-200 opacity-50' : 'bg-white border-transparent hover:border-blue-500 hover:shadow-xl shadow-sm'}`}
               >
-                <div className="space-y-2">
-                  <div className="flex justify-between items-start">
-                      <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg uppercase">{p.categoria}</span>
-                      <span className="text-[9px] font-bold text-slate-400">STK: {p.stock}</span>
-                  </div>
-                  <h4 className="font-black text-slate-800 text-sm uppercase leading-tight line-clamp-3">{p.nome}</h4>
+                <div className="space-y-1">
+                  <span className="text-[7px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase">{p.categoria}</span>
+                  <h4 className="font-black text-slate-800 text-[11px] uppercase leading-tight line-clamp-2">{p.nome}</h4>
                 </div>
                 <div className="flex items-end justify-between">
-                  <p className="text-xl font-black text-slate-900 italic tracking-tighter">
-                    {Number(p.preco).toFixed(2)}<small className="text-[10px] ml-1 text-slate-400 not-italic">{configLoja.moeda}</small>
+                  <p className="text-lg font-black text-slate-900 italic tracking-tighter">
+                    {Number(p.preco).toFixed(2)}
                   </p>
-                  <div className="bg-slate-900 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all">
-                    <Plus size={16} />
+                  <div className="bg-blue-600 text-white p-1.5 rounded-lg">
+                    <Plus size={14} />
                   </div>
                 </div>
               </button>
@@ -197,56 +176,118 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           </div>
         </div>
 
-        {/* DIREITA: CHECKOUT "PRIMAVERA STYLE" */}
-        <div className="w-full lg:w-[450px] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden">
-          <div className="p-8 space-y-6 flex-1 overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="font-black italic uppercase text-2xl tracking-tighter text-slate-800">Caixa / POS</h3>
+        {/* LADO DIREITO: CARRINHO E CHECKOUT */}
+        <div className="w-full lg:w-[480px] bg-white rounded-[2.5rem] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+          
+          {/* CABEÇALHO DO CLIENTE (PROFISSIONAL) */}
+          <div className="p-6 bg-slate-50 border-b space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+               <User size={16} className="text-blue-600" />
+               <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dados de Faturação</h3>
             </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{config.labelExtra}</label>
+            <div className="grid grid-cols-2 gap-2">
               <input 
-                  className="w-full bg-slate-50 p-4 rounded-xl outline-none border-2 border-transparent focus:border-blue-500 font-bold text-sm"
-                  placeholder={config.placeholder}
-                  value={infoExtra} 
-                  onChange={e => setInfoExtra(e.target.value)} 
+                className="col-span-2 bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs"
+                placeholder={config.placeholder}
+                value={nomeCliente} 
+                onChange={e => setNomeCliente(e.target.value)} 
+              />
+              <input 
+                className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs"
+                placeholder="NUIT Cliente"
+                value={nuitCliente} 
+                onChange={e => setNuitCliente(e.target.value)} 
+              />
+              <input 
+                className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs"
+                placeholder="Endereço (Cidade)"
+                value={enderecoCliente} 
+                onChange={e => setEnderecoCliente(e.target.value)} 
               />
             </div>
+          </div>
 
-            {/* SELEÇÃO DE PAGAMENTO MELHORADA */}
-            <div className="space-y-3">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Método de Pagamento</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                  { id: 'Dinheiro', color: 'border-emerald-100 text-emerald-600', active: 'bg-emerald-600 text-white border-emerald-600', icon: <Banknote size={16}/> },
-                  { id: 'M-Pesa', color: 'border-red-100 text-red-600', active: 'bg-red-600 text-white border-red-600', icon: <Smartphone size={16}/> },
-                  { id: 'e-Mola', color: 'border-orange-100 text-orange-600', active: 'bg-orange-600 text-white border-orange-600', icon: <Smartphone size={16}/> },
-                  { id: 'Cartão', color: 'border-blue-100 text-blue-600', active: 'bg-blue-600 text-white border-blue-600', icon: <CreditCard size={16}/> },
-                  { id: 'Transferência', color: 'border-purple-100 text-purple-600', active: 'bg-purple-600 text-white border-purple-600', icon: <Building2 size={16}/> },
-                  { id: 'Aberto', color: 'border-slate-200 text-slate-400', active: 'bg-slate-900 text-white border-slate-900', icon: <Clock size={16}/> } // LIBERADO
-                  ].map((m) => (
-                  <button
-                      key={m.id}
-                      onClick={() => { 
-                          setMetodo(m.id); 
-                          if(m.id === 'Dinheiro' || m.id === 'Aberto') setReferencia(''); 
-                      }}
-                      className={`flex flex-col items-center justify-center gap-2 p-3 rounded-2xl border-2 font-black text-[10px] uppercase transition-all ${metodo === m.id ? m.active : 'bg-white ' + m.color} active:scale-95`}
-                  >
-                      {m.icon} {m.id === 'Transferência' ? 'Transf.' : m.id}
-                  </button>
-                  ))}
+          {/* LISTA DE ITENS (COMPACTA) */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-white">
+            {carrinho.length === 0 && (
+              <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-50">
+                <ShoppingBag size={48} className="mb-2" />
+                <p className="font-black uppercase text-[10px]">Carrinho Vazio</p>
               </div>
+            )}
+            {carrinho.map((item, i) => (
+              <div key={i} className="flex justify-between items-center p-3 bg-slate-50/50 rounded-2xl border border-transparent hover:border-slate-200 transition-all">
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-slate-800 text-[10px] uppercase truncate pr-2">{item.nome}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <div className="flex items-center gap-2 bg-white border rounded-lg p-1">
+                      <button onClick={() => removerOuDiminuir(item.id)} className="text-slate-400 hover:text-red-500"><Minus size={12}/></button>
+                      <span className="text-xs font-black text-blue-600 w-4 text-center">{item.qtd}</span>
+                      <button onClick={() => adicionarAoCarrinho(item)} className="text-slate-400 hover:text-blue-500"><Plus size={12}/></button>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">{item.preco.toFixed(2)} /un</span>
+                  </div>
+                </div>
+                <div className="text-right ml-4">
+                  <p className="font-black text-slate-900 text-sm">{(item.qtd * item.preco).toFixed(2)}</p>
+                  <button onClick={() => setCarrinho(carrinho.filter(c => c.id !== item.id))} className="text-red-200 hover:text-red-500 transition-colors">
+                    <Trash2 size={12}/>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
 
-              {metodo !== 'Dinheiro' && metodo !== 'Aberto' && metodo !== 'Cartão' && (
-                <div className="animate-in slide-in-from-top-2 duration-300">
-                  <label className="text-[10px] font-black text-blue-600 uppercase ml-1 flex items-center gap-1">
-                    <Hash size={12}/> Referência / Comprovativo
-                  </label>
+          {/* PAGAMENTO E TOTAIS (ESTILO ERP) */}
+          <div className="p-6 bg-slate-900 text-white rounded-t-[3rem] shadow-2xl">
+            {/* MÉTODOS COMPACTOS */}
+            <div className="grid grid-cols-6 gap-1.5 mb-6">
+              {[
+                { id: 'Dinheiro', icon: <Banknote size={14}/>, color: 'emerald' },
+                { id: 'M-Pesa', icon: <Smartphone size={14}/>, color: 'red' },
+                { id: 'e-Mola', icon: <Smartphone size={14}/>, color: 'orange' },
+                { id: 'Cartão', icon: <CreditCard size={14}/>, color: 'blue' },
+                { id: 'Transferência', icon: <Building2 size={14}/>, color: 'purple' },
+                { id: 'Aberto', icon: <Clock size={14}/>, color: 'amber' }
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setMetodo(m.id)}
+                  title={m.id}
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl border-2 transition-all ${metodo === m.id ? `bg-${m.color}-600 border-${m.color}-600 text-white` : 'border-white/10 text-white/40 hover:border-white/30'}`}
+                >
+                  {m.icon}
+                  <span className="text-[7px] font-black uppercase mt-1">{m.id.substring(0, 4)}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* CAMPOS DINÂMICOS */}
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-white/40 uppercase ml-1 flex items-center gap-1"><Percent size={10}/> Desconto</label>
+                <input 
+                  type="number"
+                  className="w-full bg-white/5 border border-white/10 p-2.5 rounded-xl text-white font-bold text-xs outline-none focus:border-blue-500"
+                  placeholder="0.00"
+                  value={desconto}
+                  onChange={e => setDesconto(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-white/40 uppercase ml-1 flex items-center gap-1"><Calculator size={10}/> Impostos</label>
+                <button 
+                  onClick={() => setAplicarIva(!aplicarIva)}
+                  className={`w-full p-2.5 rounded-xl border font-bold text-xs transition-all ${aplicarIva ? 'bg-blue-600 border-blue-600' : 'bg-white/5 border-white/10 text-white/40'}`}
+                >
+                  IVA (16%)
+                </button>
+              </div>
+              {metodo !== 'Dinheiro' && metodo !== 'Aberto' && (
+                <div className="col-span-2 space-y-1">
                   <input 
-                    className="w-full bg-blue-50 p-4 rounded-xl outline-none border-2 border-blue-200 focus:border-blue-600 font-black text-blue-700 placeholder:text-blue-200 mt-1 uppercase"
-                    placeholder="CÓDIGO SMS..."
+                    className="w-full bg-blue-500/20 border border-blue-500/30 p-2.5 rounded-xl text-blue-300 font-black text-xs outline-none uppercase"
+                    placeholder="REFERÊNCIA DO PAGAMENTO..."
                     value={referencia}
                     onChange={e => setReferencia(e.target.value)}
                   />
@@ -254,97 +295,45 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
               )}
             </div>
 
-            <div className="space-y-2 pt-4 border-t">
-              {carrinho.map((item, i) => (
-                <div key={i} className="flex justify-between items-center p-3 hover:bg-slate-50 rounded-xl group">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-black text-slate-800 text-[11px] uppercase truncate pr-4">{item.nome}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <button onClick={() => removerOuDiminuir(item.id)} className="p-1 hover:bg-white rounded-md border shadow-sm"><Minus size={12}/></button>
-                      <span className="text-[12px] font-black text-blue-600 w-6 text-center">{item.qtd}</span>
-                      <button onClick={() => adicionarAoCarrinho(item)} className="p-1 hover:bg-white rounded-md border shadow-sm"><Plus size={12}/></button>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                      <p className="font-black text-slate-900 text-sm italic">{(item.qtd * item.preco).toFixed(2)}</p>
-                      <button onClick={() => setCarrinho(carrinho.filter(c => c.id !== item.id))} className="text-red-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all">
-                          <Trash2 size={14}/>
-                      </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* FOOTER FINANCEIRO - ESTILO ERP */}
-          <div className="p-8 bg-slate-900 rounded-t-[3.5rem] space-y-4">
-            
-            {/* LINHA DE DESCONTO E IVA */}
-            <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1 flex items-center gap-1"><Percent size={10}/> Desconto ({configLoja.moeda})</label>
-                    <input 
-                        type="number"
-                        className="w-full bg-white/5 border border-white/10 p-2 rounded-xl text-white font-bold text-sm outline-none focus:border-blue-500"
-                        placeholder="0.00"
-                        value={desconto}
-                        onChange={e => setDesconto(e.target.value)}
-                    />
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-500 uppercase ml-1 flex items-center gap-1"><Calculator size={10}/> Impostos</label>
-                    <button 
-                        onClick={() => setAplicarIva(!aplicarIva)}
-                        className={`w-full p-2 rounded-xl border font-bold text-sm transition-all ${aplicarIva ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white/5 border-white/10 text-slate-400'}`}
-                    >
-                        IVA (16%)
-                    </button>
-                </div>
-            </div>
-
-            {/* TOTAIS */}
-            <div className="flex justify-between items-end border-t border-white/10 pt-4">
-              <div className="text-slate-400 text-[10px] font-bold uppercase space-y-1">
-                  <p>Subtotal: {subtotal.toFixed(2)}</p>
-                  {aplicarIva && <p className="text-blue-400">IVA (16%): +{valorIva.toFixed(2)}</p>}
-                  {valorDesconto > 0 && <p className="text-emerald-400">Desconto: -{valorDesconto.toFixed(2)}</p>}
+            {/* ÁRVORE DE CÁLCULO */}
+            <div className="space-y-1.5 border-t border-white/10 pt-4 mb-6">
+              <div className="flex justify-between text-[10px] font-bold text-white/40 uppercase">
+                <span>Subtotal</span>
+                <span>{subtotal.toFixed(2)}</span>
               </div>
-              <div className="text-right">
-                <span className="text-[10px] font-black uppercase text-slate-500 tracking-[0.2em] block mb-1">Total a Pagar</span>
-                <span className="text-4xl font-black italic text-white tracking-tighter">
-                    {totalFinal.toFixed(2)}<small className="text-sm ml-1 opacity-50">{configLoja.moeda}</small>
+              {valorDesconto > 0 && (
+                <div className="flex justify-between text-[10px] font-bold text-emerald-400 uppercase">
+                  <span>Desconto Comercial</span>
+                  <span>- {valorDesconto.toFixed(2)}</span>
+                </div>
+              )}
+              {aplicarIva && (
+                <div className="flex justify-between text-[10px] font-bold text-blue-400 uppercase">
+                  <span>IVA (16%)</span>
+                  <span>+ {valorIva.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-end pt-2">
+                <div className="text-white/30">
+                  <p className="text-[8px] font-black uppercase leading-none">Total a Pagar</p>
+                  <p className="text-[10px] font-bold">{configLoja.moeda || 'MT'}</p>
+                </div>
+                <span className="text-4xl font-black italic tracking-tighter tabular-nums">
+                  {totalFinal.toFixed(2)}
                 </span>
               </div>
             </div>
 
-            {metodo === 'Dinheiro' && (
-              <div className="flex items-center gap-4 bg-white/5 p-3 rounded-2xl border border-white/10">
-                  <span className="text-[10px] font-black text-slate-400 uppercase whitespace-nowrap">Valor Entregue:</span>
-                  <input 
-                      type="number"
-                      className="flex-1 bg-transparent text-right text-white font-black text-xl outline-none placeholder:text-slate-600"
-                      placeholder="0.00"
-                      value={valorRecebido}
-                      onChange={e => setValorRecebido(e.target.value)}
-                  />
-                  <div className="text-right border-l border-white/10 pl-4">
-                      <span className="text-[9px] text-slate-500 block">TROCO</span>
-                      <span className="text-emerald-400 font-black">
-                        {(Number(valorRecebido) - totalFinal > 0 ? Number(valorRecebido) - totalFinal : 0).toFixed(2)}
-                      </span>
-                  </div>
-              </div>
-            )}
-
             <button 
                 onClick={finalizarVenda}
                 disabled={carrinho.length === 0 || carregando}
-                className={`w-full py-5 rounded-[2rem] font-black text-sm transition-all flex items-center justify-center gap-3 uppercase tracking-widest ${carrinho.length === 0 || carregando ? 'bg-white/5 text-white/20' : 'bg-blue-600 text-white hover:bg-blue-500 hover:scale-[1.02] shadow-xl shadow-blue-500/20 active:scale-95'}`}
+                className={`w-full py-5 rounded-[1.8rem] font-black text-xs transition-all flex items-center justify-center gap-3 uppercase tracking-[0.2em] ${carrinho.length === 0 || carregando ? 'bg-white/5 text-white/20' : 'bg-blue-600 text-white hover:bg-blue-500 shadow-xl shadow-blue-500/20 active:scale-95'}`}
             >
-              {carregando ? (
-                  <div className="flex items-center gap-2 animate-pulse">PROCESSANDO...</div>
-              ) : (
-                  <><CheckCircle2 size={22} /> {metodo === 'Aberto' ? 'LANÇAR NA CONTA (FIADO)' : config.botaoAcao}</>
+              {carregando ? "A PROCESSAR..." : (
+                <>
+                  <CheckCircle2 size={18} /> 
+                  {metodo === 'Aberto' ? 'LANÇAR EM CONTA (FIADO)' : config.botaoAcao}
+                </>
               )}
             </button>
           </div>
@@ -352,17 +341,17 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
       </div>
       
       {vendaFinalizada && (
-        <Recibo 
+        <ReciboA4 
           venda={vendaFinalizada} 
           configLoja={configLoja}
           fechar={() => { 
             setVendaFinalizada(null); 
             setCarrinho([]); 
-            setInfoExtra('');
-            setValorRecebido('');
-            setReferencia('');
+            setNomeCliente('');
+            setNuitCliente('');
+            setEnderecoCliente('');
             setDesconto('');
-            setAplicarIva(false);
+            setReferencia('');
             inputPesquisa.current?.focus();
           }} 
         />
