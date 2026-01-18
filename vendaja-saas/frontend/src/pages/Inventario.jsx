@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import {
   collection, addDoc, updateDoc, doc,
@@ -8,10 +8,10 @@ import {
 import {
   Plus, Search, Edit3, Trash2,
   Package, Filter, X, Loader2,
-  TrendingUp, DollarSign, Hash, Globe, Crown, FileText, Truck, Receipt
+  TrendingUp, DollarSign, Hash, Globe, Crown, FileText, Truck, Receipt, AlertTriangle, ArrowDown
 } from 'lucide-react';
 
-const Inventario = ({ usuario, avisar }) => {
+const Inventario = ({ usuario, avisar, configLoja }) => {
   const [pesquisa, setPesquisa] = useState('');
   const [mostrarModal, setMostrarModal] = useState(false);
   const [produtoEditando, setProdutoEditando] = useState(null);
@@ -20,7 +20,6 @@ const Inventario = ({ usuario, avisar }) => {
 
   const isPremium = usuario?.plano === 'premium';
 
-  // ESTADO INICIAL AMPLIADO (ESTILO PRIMAVERA)
   const [novoProd, setNovoProd] = useState({
     nome: '', 
     referencia: '', 
@@ -29,9 +28,9 @@ const Inventario = ({ usuario, avisar }) => {
     stock: '', 
     categoria: 'Geral', 
     venderOnline: false,
-    descricao: '', // NOVO
-    fornecedor: '', // NOVO
-    temIva: true    // NOVO (Padrão 16%)
+    descricao: '', 
+    fornecedor: '', 
+    temIva: true
   });
 
   useEffect(() => {
@@ -51,6 +50,16 @@ const Inventario = ({ usuario, avisar }) => {
     return () => unsub();
   }, [usuario?.lojaId]);
 
+  // MÉTRICAS FINANCEIRAS DO INVENTÁRIO
+  const metricas = useMemo(() => {
+    const totalItens = produtos.reduce((acc, p) => acc + Number(p.stock), 0);
+    const valorCusto = produtos.reduce((acc, p) => acc + (Number(p.custo) * Number(p.stock)), 0);
+    const valorVendaEstimado = produtos.reduce((acc, p) => acc + (Number(p.preco) * Number(p.stock)), 0);
+    const stockBaixo = produtos.filter(p => p.stock <= 5).length;
+
+    return { totalItens, valorCusto, valorVendaEstimado, stockBaixo, lucroPotencial: valorVendaEstimado - valorCusto };
+  }, [produtos]);
+
   const salvarProduto = async (e) => {
     e.preventDefault();
     if (!usuario?.lojaId) return;
@@ -63,9 +72,9 @@ const Inventario = ({ usuario, avisar }) => {
         custo: Number(novoProd.custo),
         stock: Number(novoProd.stock),
         categoria: novoProd.categoria,
-        descricao: novoProd.descricao.trim(), // NOVO
-        fornecedor: novoProd.fornecedor.toUpperCase().trim(), // NOVO
-        temIva: novoProd.temIva, // NOVO
+        descricao: novoProd.descricao.trim(),
+        fornecedor: novoProd.fornecedor.toUpperCase().trim(),
+        temIva: novoProd.temIva,
         venderOnline: isPremium ? novoProd.venderOnline : false,
         lojaId: usuario.lojaId,
         atualizadoEm: serverTimestamp()
@@ -120,148 +129,199 @@ const Inventario = ({ usuario, avisar }) => {
 
   return (
     <div className="space-y-8 pb-10">
-      <div className="flex justify-between items-center">
+      
+      {/* HEADER DINÂMICO */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
         <div>
-          <h2 className="text-4xl font-black uppercase flex items-center gap-3">
-            Inventário {isPremium && <Crown className="text-amber-500" size={24} />}
+          <h2 className="text-4xl font-black uppercase flex items-center gap-3 italic">
+            <Package className="text-blue-600" size={35}/> Inventário
           </h2>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
-            {produtosFiltrados.length} Produtos • Gestão Profissional
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mt-1">
+             Controlo Físico e Financeiro de Stock
           </p>
         </div>
-        <button onClick={() => setMostrarModal(true)} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black flex gap-2 hover:bg-blue-600 transition-all shadow-lg">
-          <Plus /> Novo Produto
+        <button onClick={() => setMostrarModal(true)} className="bg-slate-900 text-white px-10 py-5 rounded-[2rem] font-black flex gap-3 hover:bg-blue-600 transition-all shadow-2xl active:scale-95 text-sm uppercase tracking-widest">
+          <Plus size={20}/> Novo Artigo
         </button>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" />
-        <input className="w-full bg-white p-5 pl-16 rounded-2xl border focus:ring-4 focus:ring-blue-50 outline-none transition-all font-medium"
-          placeholder="Pesquisar por nome, ref ou fornecedor..."
+      {/* PAINEL DE MÉTRICAS RÁPIDAS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+             <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Valor em Stock (Custo)</p>
+             <p className="text-2xl font-black text-slate-900 tabular-nums">{metricas.valorCusto.toFixed(2)} <small className="text-xs opacity-50">MT</small></p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+             <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Lucro Potencial</p>
+             <p className="text-2xl font-black text-emerald-500 tabular-nums">+{metricas.lucroPotencial.toFixed(2)} <small className="text-xs opacity-50">MT</small></p>
+          </div>
+          <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+             <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Qtd Total Itens</p>
+             <p className="text-2xl font-black text-slate-900 tabular-nums">{metricas.totalItens} <small className="text-xs opacity-50">UN</small></p>
+          </div>
+          <div className={`p-6 rounded-[2rem] border shadow-sm transition-all ${metricas.stockBaixo > 0 ? 'bg-red-50 border-red-100 animate-pulse' : 'bg-white border-slate-100'}`}>
+             <p className="text-[10px] font-black text-red-400 uppercase mb-2 flex items-center gap-2">
+                <AlertTriangle size={12}/> Stock Crítico
+             </p>
+             <p className={`text-2xl font-black ${metricas.stockBaixo > 0 ? 'text-red-600' : 'text-slate-300'}`}>
+                {metricas.stockBaixo} <small className="text-xs opacity-50 uppercase">Avisos</small>
+             </p>
+          </div>
+      </div>
+
+      {/* PESQUISA */}
+      <div className="relative group">
+        <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" />
+        <input className="w-full bg-white p-6 pl-16 rounded-[2rem] border-none shadow-sm focus:ring-4 focus:ring-blue-100 outline-none transition-all font-bold text-slate-700 placeholder:text-slate-300"
+          placeholder="Pesquisar por nome, referência ou fornecedor do artigo..."
           value={pesquisa} onChange={e => setPesquisa(e.target.value)} />
       </div>
 
-      {/* TABELA COM NOVAS COLUNAS */}
-      <div className="bg-white rounded-[2.5rem] overflow-hidden border shadow-sm">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-tighter">
-              <th className="p-6">Referência</th>
-              <th className="p-6">Produto / Descrição</th>
-              <th className="p-6">Fornecedor</th>
-              <th className="p-6">Imposto</th>
-              <th className="p-6 text-center">Stock</th>
-              <th className="p-6">Preço Venda</th>
-              <th className="p-6 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {produtosFiltrados.map(p => (
-              <tr key={p.id} className="border-t hover:bg-slate-50/50 transition-colors">
-                <td className="p-6 font-mono text-blue-600 text-xs font-bold">#{p.referencia || '---'}</td>
-                <td className="p-6 max-w-xs">
-                  <div className="font-black text-slate-900 uppercase text-sm">{p.nome}</div>
-                  <div className="text-[10px] text-slate-400 line-clamp-1 italic">{p.descricao || 'Sem descrição'}</div>
-                </td>
-                <td className="p-6">
-                   <span className="text-[10px] font-black bg-slate-100 px-2 py-1 rounded-md text-slate-600 uppercase">
-                     {p.fornecedor || 'N/A'}
-                   </span>
-                </td>
-                <td className="p-6">
-                    <div className={`flex items-center gap-1 font-bold text-xs ${p.temIva ? 'text-emerald-600' : 'text-slate-300'}`}>
-                        <Receipt size={14}/> {p.temIva ? 'IVA 16%' : 'ISENTO'}
-                    </div>
-                </td>
-                <td className="p-6 text-center">
-                  <span className={`px-3 py-1 rounded-full text-xs font-black ${p.stock <= 5 ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
-                    {p.stock}
-                  </span>
-                </td>
-                <td className="p-6 font-black text-slate-900">{Number(p.preco).toFixed(2)} <small>MT</small></td>
-                <td className="p-6 text-right">
-                  <div className="flex justify-end gap-1">
-                    <button onClick={() => abrirEdicao(p)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit3 size={18} /></button>
-                    <button onClick={() => deletarProduto(p.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18} /></button>
-                  </div>
-                </td>
+      {/* TABELA PROFISSIONAL */}
+      <div className="bg-white rounded-[3rem] overflow-hidden border border-slate-100 shadow-xl">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-900 text-[10px] uppercase text-slate-400 font-black tracking-widest">
+                <th className="p-8">Ref / Fornecedor</th>
+                <th className="p-8">Produto</th>
+                <th className="p-8 text-center">Stock Físico</th>
+                <th className="p-8 text-right">Custo Unit.</th>
+                <th className="p-8 text-right">PVP (Venda)</th>
+                <th className="p-8 text-right">Margem</th>
+                <th className="p-8 text-center">Ações</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {produtosFiltrados.map(p => {
+                const margem = p.preco - p.custo;
+                const percentagem = p.custo > 0 ? (margem / p.custo) * 100 : 0;
+                
+                return (
+                  <tr key={p.id} className="hover:bg-blue-50/30 transition-colors group">
+                    <td className="p-8">
+                      <div className="font-mono text-blue-600 text-[11px] font-black">#{p.referencia || 'SEM-REF'}</div>
+                      <div className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-tighter">{p.fornecedor || 'Fornecedor Local'}</div>
+                    </td>
+                    <td className="p-8">
+                      <div className="font-black text-slate-800 uppercase text-sm group-hover:text-blue-700 transition-colors">{p.nome}</div>
+                      <div className="text-[10px] text-slate-400 italic line-clamp-1">{p.descricao || 'Nenhuma nota adicional registrada.'}</div>
+                    </td>
+                    <td className="p-8 text-center">
+                      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-xs ${p.stock <= 5 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}>
+                        {p.stock} {p.stock <= 5 && <AlertTriangle size={12}/>}
+                      </div>
+                    </td>
+                    <td className="p-8 text-right font-bold text-slate-400 tabular-nums">{Number(p.custo || 0).toFixed(2)}</td>
+                    <td className="p-8 text-right font-black text-slate-900 tabular-nums text-lg">{Number(p.preco).toFixed(2)}</td>
+                    <td className="p-8 text-right">
+                        <div className="text-[10px] font-black text-emerald-600 uppercase">+{margem.toFixed(2)} MT</div>
+                        <div className="text-[9px] text-slate-300 font-bold">{percentagem.toFixed(0)}% Lucro</div>
+                    </td>
+                    <td className="p-8">
+                      <div className="flex justify-center gap-2">
+                        <button onClick={() => abrirEdicao(p)} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-2xl transition-all shadow-sm"><Edit3 size={18} /></button>
+                        <button onClick={() => deletarProduto(p.id)} className="p-3 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl transition-all shadow-sm"><Trash2 size={18} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* MODAL COM CAMPOS DE DESCRIÇÃO E FORNECEDOR */}
+      {/* MODAL DE FICHA TÉCNICA */}
       {mostrarModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <form onSubmit={salvarProduto} className="bg-white p-8 md:p-10 rounded-[3rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto space-y-6 shadow-2xl animate-in zoom-in duration-300">
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[100] p-4">
+          <form onSubmit={salvarProduto} className="bg-white p-8 md:p-12 rounded-[3.5rem] w-full max-w-3xl max-h-[90vh] overflow-y-auto space-y-8 shadow-2xl animate-in zoom-in duration-300">
             <div className="flex justify-between items-center">
-              <h3 className="text-3xl font-black italic uppercase tracking-tighter text-slate-800">
-                {produtoEditando ? "Editar Ficha" : "Nova Ficha de Produto"}
-              </h3>
-              <button type="button" onClick={fecharModal} className="bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-900"><X /></button>
+              <div>
+                <h3 className="text-3xl font-black italic uppercase tracking-tighter text-slate-900">
+                  {produtoEditando ? "Editar Ficha Técnica" : "Nova Entrada de Stock"}
+                </h3>
+                <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-1">Configurações de inventário e impostos</p>
+              </div>
+              <button type="button" onClick={fecharModal} className="bg-slate-100 p-4 rounded-full text-slate-400 hover:text-red-500 transition-all shadow-inner"><X /></button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1 md:col-span-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Nome do Artigo</label>
-                <input required placeholder="Ex: IPAD PRO M2 12.9"
-                  className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold"
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
+              {/* NOME E DESCRIÇÃO */}
+              <div className="md:col-span-4 space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-4">Nome do Artigo / Modelo</label>
+                <input required placeholder="Ex: IPHONE 15 PRO MAX 256GB"
+                  className="w-full p-5 border-2 border-slate-50 rounded-3xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-black text-slate-800"
                   value={novoProd.nome} onChange={e => setNovoProd({ ...novoProd, nome: e.target.value })} />
               </div>
 
-              <div className="space-y-1 md:col-span-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 flex items-center gap-1"><FileText size={10}/> Descrição Detalhada (Opcional)</label>
-                <textarea placeholder="Especificações técnicas, cores, tamanhos..."
-                  className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all text-sm h-20 resize-none"
-                  value={novoProd.descricao} onChange={e => setNovoProd({ ...novoProd, descricao: e.target.value })} />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Referência / SKU</label>
-                <input placeholder="Ex: ART-2024"
-                  className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-mono text-sm"
+              <div className="md:col-span-2 space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-4">Referência / SKU</label>
+                <input placeholder="REF-2024-X"
+                  className="w-full p-5 border-2 border-slate-50 rounded-3xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-mono font-bold text-blue-600"
                   value={novoProd.referencia} onChange={e => setNovoProd({ ...novoProd, referencia: e.target.value })} />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2 flex items-center gap-1"><Truck size={10}/> Fornecedor</label>
-                <input placeholder="Ex: SDO / REFRESH"
-                  className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-sm"
+              <div className="md:col-span-6 space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-4 flex items-center gap-1"><FileText size={12}/> Notas Técnicas ou Descrição</label>
+                <textarea placeholder="Detalhes de cor, tamanho, especificações..."
+                  className="w-full p-5 border-2 border-slate-50 rounded-3xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all text-sm h-24 resize-none font-medium"
+                  value={novoProd.descricao} onChange={e => setNovoProd({ ...novoProd, descricao: e.target.value })} />
+              </div>
+
+              {/* FORNECEDOR E STOCK */}
+              <div className="md:col-span-3 space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-4 flex items-center gap-1"><Truck size={12}/> Nome do Fornecedor</label>
+                <input placeholder="Ex: APPLE MOZAMBIQUE"
+                  className="w-full p-5 border-2 border-slate-50 rounded-3xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold uppercase"
                   value={novoProd.fornecedor} onChange={e => setNovoProd({ ...novoProd, fornecedor: e.target.value })} />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Stock Inicial</label>
+              <div className="md:col-span-3 space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-400 ml-4 flex items-center gap-1"><Package size={12}/> Stock Inicial Físico</label>
                 <input type="number" required placeholder="0"
-                  className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-black"
+                  className="w-full p-5 border-2 border-slate-50 rounded-3xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-black text-xl"
                   value={novoProd.stock} onChange={e => setNovoProd({ ...novoProd, stock: e.target.value })} />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Preço de Venda (MT)</label>
-                <input type="number" required step="0.01" placeholder="0.00"
-                  className="w-full p-4 border-2 border-blue-100 rounded-2xl bg-blue-50/30 focus:bg-white focus:border-blue-500 outline-none transition-all font-black text-blue-600 text-lg"
-                  value={novoProd.preco} onChange={e => setNovoProd({ ...novoProd, preco: e.target.value })} />
+              {/* FINANCEIRO */}
+              <div className="md:col-span-3 p-6 bg-slate-900 rounded-[2.5rem] space-y-2">
+                <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Preço de Compra (Custo)</label>
+                <div className="relative">
+                    <DollarSign className="absolute left-0 top-1/2 -translate-y-1/2 text-slate-500" size={20}/>
+                    <input type="number" required step="0.01" placeholder="0.00"
+                    className="w-full bg-transparent pl-8 border-none text-white focus:ring-0 outline-none font-black text-2xl tabular-nums"
+                    value={novoProd.custo} onChange={e => setNovoProd({ ...novoProd, custo: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="md:col-span-3 p-6 bg-blue-600 rounded-[2.5rem] space-y-2">
+                <label className="text-[10px] font-black uppercase text-blue-200 ml-2">Preço de Venda (PVP)</label>
+                <div className="relative">
+                    <DollarSign className="absolute left-0 top-1/2 -translate-y-1/2 text-blue-200" size={20}/>
+                    <input type="number" required step="0.01" placeholder="0.00"
+                    className="w-full bg-transparent pl-8 border-none text-white focus:ring-0 outline-none font-black text-2xl tabular-nums"
+                    value={novoProd.preco} onChange={e => setNovoProd({ ...novoProd, preco: e.target.value })} />
+                </div>
               </div>
             </div>
 
-            {/* CONFIGURAÇÃO DE IMPOSTO */}
-            <div className="p-5 rounded-3xl bg-emerald-50 border-2 border-emerald-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <Receipt className="text-emerald-600" size={24}/>
+            {/* IVA */}
+            <div className="flex items-center justify-between p-6 bg-emerald-50 rounded-[2rem] border-2 border-emerald-100">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm"><Receipt/></div>
                     <div>
-                        <p className="text-xs font-black uppercase text-emerald-800">Aplicar IVA (16%)</p>
-                        <p className="text-[10px] font-medium text-emerald-600">Este produto inclui imposto na venda</p>
+                        <p className="text-xs font-black uppercase text-emerald-900">Taxar IVA (16%)</p>
+                        <p className="text-[10px] font-bold text-emerald-600 uppercase">Incluir imposto no preço final de venda</p>
                     </div>
                 </div>
-                <input type="checkbox" className="w-6 h-6 accent-emerald-600 cursor-pointer"
+                <input type="checkbox" className="w-8 h-8 accent-emerald-600 cursor-pointer"
                   checked={novoProd.temIva} onChange={e => setNovoProd({ ...novoProd, temIva: e.target.checked })} />
             </div>
 
             <button disabled={carregando}
-              className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-xl disabled:opacity-50 active:scale-95">
-              {carregando ? "A processar..." : (produtoEditando ? "Salvar Alterações" : "Gravar no Inventário")}
+              className="w-full bg-slate-900 text-white py-8 rounded-[2.5rem] font-black uppercase tracking-[0.3em] hover:bg-blue-600 transition-all shadow-2xl shadow-blue-200 disabled:opacity-50 active:scale-95 text-lg">
+              {carregando ? <Loader2 className="animate-spin mx-auto"/> : (produtoEditando ? "Confirmar Edição" : "Finalizar Registo de Stock")}
             </button>
           </form>
         </div>

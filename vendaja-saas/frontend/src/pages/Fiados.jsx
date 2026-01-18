@@ -4,15 +4,16 @@ import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp, ord
 import { 
   Clock, CheckCircle2, User, Calendar, DollarSign, Search, 
   Filter, ArrowUpRight, Loader2, CreditCard, ChevronRight,
-  AlertCircle, Eye, Receipt, X, TrendingDown, CalendarDays
+  AlertCircle, Eye, Receipt, X, TrendingDown, CalendarDays,
+  Printer, Send, FileText
 } from 'lucide-react';
 
 const Fiados = ({ usuario, configLoja, avisar }) => {
   const [dividas, setDividas] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [pesquisa, setPesquisa] = useState('');
-  const [filtroTempo, setFiltroTempo] = useState('todos'); // todos, hoje, semana, antigo
-  const [filtroValor, setFiltroValor] = useState('recente'); // recente, maior_valor
+  const [filtroTempo, setFiltroTempo] = useState('todos'); 
+  const [filtroValor, setFiltroValor] = useState('recente'); 
   const [processandoId, setProcessandoId] = useState(null);
   const [vendaSelecionada, setVendaSelecionada] = useState(null);
 
@@ -27,7 +28,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
         collection(db, "vendas"),
         where("lojaId", "==", usuario.lojaId),
         where("status", "==", "PENDENTE"),
-        orderBy("timestamp", "desc")
+        orderBy("data", "desc")
       );
 
       const snap = await getDocs(q);
@@ -35,7 +36,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
       setDividas(lista);
     } catch (error) {
       console.error("Erro ao buscar fiados:", error);
-      avisar("ERRO AO CARREGAR DÍVIDAS", "erro");
+      avisar("ERRO AO CARREGAR REGISTOS", "erro");
     } finally {
       setCarregando(false);
     }
@@ -50,48 +51,106 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
       await updateDoc(vendaRef, {
         status: "PAGO",
         dataLiquidacao: new Date().toISOString(),
-        pagoEm: serverTimestamp(),
-        metodoPagamentoOriginal: "Dívida (Fiado)"
+        metodoPagamentoOriginal: "Dívida (Fiado)",
+        metodo: "Dinheiro"
       });
 
       setDividas(dividas.filter(d => d.id !== vendaId));
       setVendaSelecionada(null);
-      avisar("CONTA LIQUIDADA COM SUCESSO!", "sucesso");
+      avisar("CONTA LIQUIDADA", "sucesso");
     } catch (error) {
-      avisar("FALHA AO LIQUIDAR", "erro");
+      avisar("FALHA NA OPERAÇÃO", "erro");
     } finally {
       setProcessandoId(null);
     }
   };
 
-  // LÓGICA DE FILTRAGEM AVANÇADA
+  const imprimirExtrato = (venda) => {
+    const janelaImpressao = window.open('', '_blank');
+    janelaImpressao.document.write(`
+      <html>
+        <head>
+          <title>EXTRATO DE DÍVIDA - ${configLoja.nome}</title>
+          <style>
+            body { font-family: sans-serif; padding: 40px; color: #333; }
+            .header { border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
+            .loja-nome { font-size: 24px; font-weight: bold; text-transform: uppercase; }
+            .titulo { font-size: 18px; margin-top: 10px; font-weight: bold; color: #666; }
+            .dados { margin-bottom: 30px; font-size: 14px; }
+            table { w-full; border-collapse: collapse; margin-top: 20px; }
+            th { text-align: left; border-bottom: 1px solid #eee; padding: 10px; font-size: 12px; text-transform: uppercase; }
+            td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+            .total-container { margin-top: 30px; text-align: right; border-top: 2px solid #000; padding-top: 10px; }
+            .total-valor { font-size: 22px; font-weight: bold; }
+            .rodape { margin-top: 50px; font-size: 10px; text-align: center; color: #999; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="loja-nome">${configLoja.nome}</div>
+            <div class="titulo">EXTRATO DE DÉBITO PENDENTE</div>
+          </div>
+          <div class="dados">
+            <p><strong>CLIENTE:</strong> ${venda.infoAdicional || 'NÃO ESPECIFICADO'}</p>
+            <p><strong>DATA DA COMPRA:</strong> ${new Date(venda.data).toLocaleDateString()}</p>
+            <p><strong>REFERÊNCIA:</strong> ${venda.id.slice(-8).toUpperCase()}</p>
+          </div>
+          <table style="width: 100%">
+            <thead>
+              <tr>
+                <th>DESCRIÇÃO</th>
+                <th>QTD</th>
+                <th>PREÇO UNIT.</th>
+                <th>SUBTOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${venda.itens.map(it => `
+                <tr>
+                  <td>${it.nome.toUpperCase()}</td>
+                  <td>${it.qtd}</td>
+                  <td>${Number(it.preco).toFixed(2)}</td>
+                  <td>${(Number(it.preco) * Number(it.qtd)).toFixed(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <div class="total-container">
+            <span>TOTAL EM DÍVIDA</span><br/>
+            <span class="total-valor">${Number(venda.total).toFixed(2)} ${configLoja.moeda}</span>
+          </div>
+          <div class="rodape">
+            Documento gerado em ${new Date().toLocaleString()}<br/>
+            Este documento serve apenas para conferência de valores pendentes.
+          </div>
+        </body>
+      </html>
+    `);
+    janelaImpressao.document.close();
+    janelaImpressao.print();
+  };
+
   const dadosFiltrados = useMemo(() => {
     let resultado = dividas.filter(d => 
       d.infoAdicional?.toLowerCase().includes(pesquisa.toLowerCase()) ||
-      d.clienteNome?.toLowerCase().includes(pesquisa.toLowerCase()) ||
       d.id.toLowerCase().includes(pesquisa.toLowerCase())
     );
 
-    // Filtro por Tempo
     const agora = new Date();
     if (filtroTempo === 'hoje') {
-      resultado = resultado.filter(d => {
-        const data = new Date(d.timestamp?.seconds * 1000);
-        return data.toDateString() === agora.toDateString();
-      });
+      resultado = resultado.filter(d => new Date(d.data).toDateString() === agora.toDateString());
     } else if (filtroTempo === 'semana') {
       const umaSemanaAtras = new Date().setDate(agora.getDate() - 7);
-      resultado = resultado.filter(d => (d.timestamp?.seconds * 1000) > umaSemanaAtras);
+      resultado = resultado.filter(d => new Date(d.data) > umaSemanaAtras);
     } else if (filtroTempo === 'antigo') {
       const umaSemanaAtras = new Date().setDate(agora.getDate() - 7);
-      resultado = resultado.filter(d => (d.timestamp?.seconds * 1000) < umaSemanaAtras);
+      resultado = resultado.filter(d => new Date(d.data) < umaSemanaAtras);
     }
 
-    // Ordenação por Valor
     if (filtroValor === 'maior_valor') {
       resultado.sort((a, b) => b.total - a.total);
     } else {
-      resultado.sort((a, b) => b.timestamp?.seconds - a.timestamp?.seconds);
+      resultado.sort((a, b) => new Date(b.data) - new Date(a.data));
     }
 
     return resultado;
@@ -102,173 +161,146 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       
-      {/* HEADER & METRICAS */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div>
-          <h2 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter">
-            Controlo de <span className="text-blue-600">Fiados</span>
-          </h2>
-          <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em] mt-1 flex items-center gap-2">
-            <Filter size={12}/> {dadosFiltrados.length} clientes pendentes
-          </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-2 bg-white p-8 rounded-[2rem] border border-slate-200 flex flex-col justify-between">
+            <div>
+                <h2 className="text-3xl font-bold text-slate-900 uppercase tracking-tight">
+                    GESTÃO DE <span className="text-blue-700">CONTAS A RECEBER</span>
+                </h2>
+                <p className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider mt-1">
+                    CONTROLO DE CRÉDITO E COBRANÇAS ATIVAS
+                </p>
+            </div>
+            <div className="flex gap-3 mt-8">
+                {['todos', 'hoje', 'antigo'].map(f => (
+                    <button 
+                        key={f}
+                        onClick={() => setFiltroTempo(f)}
+                        className={`px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase transition-all border ${filtroTempo === f ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-400'}`}
+                    >
+                        {f === 'antigo' ? 'DÍVIDAS CRÍTICAS (+7 DIAS)' : f}
+                    </button>
+                ))}
+            </div>
         </div>
 
-        <div className="bg-slate-900 p-1.5 rounded-[2.5rem] flex items-center shadow-2xl shadow-blue-200">
-           <div className="bg-white px-8 py-4 rounded-[2.2rem] flex items-center gap-6">
-              <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center">
-                <TrendingDown size={24} />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Total Filtrado</p>
-                <p className="text-3xl font-black text-slate-900 italic tabular-nums">
-                    {totalEmAberto.toFixed(2)}<small className="text-xs ml-1 opacity-40">{configLoja.moeda}</small>
-                </p>
-              </div>
-           </div>
+        <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200 relative overflow-hidden">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">CAPITAL EM DÍVIDA</p>
+            <h3 className="text-4xl font-bold text-slate-900 tabular-nums">
+                {totalEmAberto.toLocaleString()}<small className="text-sm font-medium ml-2 text-slate-400">{configLoja.moeda}</small>
+            </h3>
+            <div className="mt-4 flex items-center gap-2 text-red-600 font-bold text-[10px] uppercase">
+                <AlertCircle size={14}/> {dadosFiltrados.length} FATURAS PENDENTES
+            </div>
         </div>
       </div>
 
-      {/* BARRA DE FERRAMENTAS: PESQUISA E FILTROS */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-6 relative">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input 
-            className="w-full bg-white p-5 pl-16 rounded-[2rem] shadow-sm border border-slate-100 outline-none focus:ring-4 ring-blue-50 font-bold text-slate-700 transition-all"
-            placeholder="Procurar cliente..."
+            className="w-full bg-white p-5 pl-14 rounded-2xl border border-slate-200 outline-none focus:border-blue-500 font-medium text-slate-700 transition-all shadow-sm"
+            placeholder="PESQUISAR CLIENTE OU REFERÊNCIA..."
             value={pesquisa}
             onChange={e => setPesquisa(e.target.value)}
           />
         </div>
-
-        <div className="lg:col-span-3">
-          <select 
-            className="w-full bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 outline-none font-bold text-slate-600 appearance-none cursor-pointer"
-            value={filtroTempo}
-            onChange={e => setFiltroTempo(e.target.value)}
-          >
-            <option value="todos">📅 Todo o período</option>
-            <option value="hoje">☀️ Dívidas de Hoje</option>
-            <option value="semana">⏳ Últimos 7 dias</option>
-            <option value="antigo">⚠️ Mais de uma semana</option>
-          </select>
-        </div>
-
-        <div className="lg:col-span-3">
-          <select 
-            className="w-full bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 outline-none font-bold text-slate-600 appearance-none cursor-pointer"
+        <select 
+            className="bg-white px-6 py-5 rounded-2xl border border-slate-200 font-bold text-[11px] uppercase text-slate-600 outline-none cursor-pointer"
             value={filtroValor}
             onChange={e => setFiltroValor(e.target.value)}
-          >
-            <option value="recente">🕒 Mais Recentes</option>
-            <option value="maior_valor">💰 Maior Valor</option>
-          </select>
-        </div>
+        >
+            <option value="recente">ORDENAR POR DATA</option>
+            <option value="maior_valor">ORDENAR POR VALOR</option>
+        </select>
       </div>
 
-      {/* LISTA DE DÍVIDAS */}
-      {carregando ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <Loader2 className="animate-spin text-blue-600" size={40} />
-          <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Carregando contas...</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {dadosFiltrados.length === 0 ? (
-            <div className="bg-white rounded-[3rem] p-20 text-center border-2 border-dashed border-slate-100">
-              <CheckCircle2 className="mx-auto text-emerald-100 mb-4" size={80} />
-              <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Nenhum registo encontrado com estes filtros.</p>
-            </div>
-          ) : (
-            dadosFiltrados.map((item) => {
-              const diasDesde = Math.floor((new Date() - new Date(item.timestamp?.seconds * 1000)) / (1000 * 60 * 60 * 24));
-              const isUrgente = diasDesde >= 7;
+      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
+              <th className="p-6">CLIENTE / DATA</th>
+              <th className="p-6">ESTADO</th>
+              <th className="p-6 text-right">VALOR PENDENTE</th>
+              <th className="p-6 text-right">AÇÕES</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {carregando ? (
+                <tr><td colSpan="4" className="p-20 text-center"><Loader2 className="animate-spin inline text-blue-600" size={30}/></td></tr>
+            ) : dadosFiltrados.map((item) => {
+                const dias = Math.floor((new Date() - new Date(item.data)) / (1000 * 60 * 60 * 24));
+                return (
+                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-6">
+                            <div className="font-bold text-slate-800 uppercase text-sm">{item.infoAdicional || "NÃO IDENTIFICADO"}</div>
+                            <div className="text-[10px] text-slate-400 font-medium mt-1 uppercase">REGISTADO EM: {new Date(item.data).toLocaleDateString()}</div>
+                        </td>
+                        <td className="p-6">
+                            <span className={`text-[9px] font-bold px-3 py-1 rounded-md uppercase border ${dias >= 7 ? 'border-red-200 bg-red-50 text-red-600' : 'border-slate-200 bg-white text-slate-500'}`}>
+                                {dias} DIAS EM ATRAZO
+                            </span>
+                        </td>
+                        <td className="p-6 text-right font-bold text-slate-900 text-lg tabular-nums">
+                            {Number(item.total).toFixed(2)}
+                        </td>
+                        <td className="p-6 text-right flex justify-end gap-2">
+                            <button onClick={() => imprimirExtrato(item)} className="p-3 text-slate-400 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-white transition-all shadow-sm" title="IMPRIMIR EXTRATO">
+                                <Printer size={18} />
+                            </button>
+                            <button onClick={() => setVendaSelecionada(item)} className="p-3 text-slate-400 hover:text-blue-600 border border-slate-200 rounded-xl hover:bg-white transition-all shadow-sm">
+                                <Eye size={18} />
+                            </button>
+                            <button 
+                                onClick={() => liquidarDivida(item.id)}
+                                className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-emerald-700 transition-all"
+                            >
+                                LIQUIDAR
+                            </button>
+                        </td>
+                    </tr>
+                )
+            })}
+          </tbody>
+        </table>
+      </div>
 
-              return (
-                <div key={item.id} className={`bg-white p-6 rounded-[2.5rem] border ${isUrgente ? 'border-red-100 bg-red-50/20' : 'border-slate-100'} hover:shadow-xl transition-all flex flex-col lg:flex-row items-center justify-between gap-6 group`}>
-                  
-                  <div className="flex items-center gap-6 flex-1 w-full">
-                    <div className={`w-16 h-16 rounded-[1.8rem] flex items-center justify-center transition-all duration-500 ${isUrgente ? 'bg-red-500 text-white animate-pulse' : 'bg-slate-100 text-slate-400 group-hover:bg-blue-600 group-hover:text-white'}`}>
-                      <User size={28} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-3 mb-1">
-                        <h4 className="font-black text-slate-900 uppercase text-lg italic tracking-tighter">
-                          {item.infoAdicional || item.clienteNome || "Cliente Ocasional"}
-                        </h4>
-                        {isUrgente && (
-                          <span className="text-[8px] font-black bg-red-600 text-white px-2 py-1 rounded-lg uppercase animate-bounce">⚠️ Dívida Antiga</span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-4 text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                        <span className="flex items-center gap-1.5"><Calendar size={13}/> {new Date(item.timestamp?.seconds * 1000).toLocaleDateString()}</span>
-                        <span className="flex items-center gap-1.5 text-blue-500"><Clock size={13}/> {diasDesde} Dias em aberto</span>
-                        <button onClick={() => setVendaSelecionada(item)} className="text-blue-600 underline hover:text-blue-800 transition-colors">Detalhes da Venda</button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-6 w-full lg:w-auto">
-                    <div className="text-right flex-1 lg:flex-none">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Valor Pendente</p>
-                      <p className="text-3xl font-black text-slate-900 italic leading-none tabular-nums">
-                        {Number(item.total).toFixed(2)}<small className="text-xs ml-1 uppercase">{configLoja.moeda}</small>
-                      </p>
-                    </div>
-
-                    <button 
-                      onClick={() => liquidarDivida(item.id)}
-                      disabled={processandoId === item.id}
-                      className="bg-slate-900 text-white h-16 px-10 rounded-[1.8rem] font-black text-[11px] uppercase tracking-[0.2em] hover:bg-emerald-600 transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-3"
-                    >
-                      {processandoId === item.id ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-                      Liquidar
-                    </button>
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-      )}
-
-      {/* MODAL DE DETALHES (SIMPLIFICADO E PROFISSIONAL) */}
       {vendaSelecionada && (
-        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-lg rounded-[3rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
-                <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                    <div>
-                        <h3 className="text-2xl font-black uppercase italic text-slate-900 leading-none">Itens da Conta</h3>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-2 tracking-widest">Ref: {vendaSelecionada.id.slice(-10)}</p>
-                    </div>
-                    <button onClick={() => setVendaSelecionada(null)} className="p-4 bg-white text-slate-400 rounded-full hover:text-red-500 transition-all shadow-sm"><X size={20}/></button>
-                </div>
-                
-                <div className="p-8 space-y-3 max-h-[40vh] overflow-y-auto">
-                    {vendaSelecionada.itens.map((it, idx) => (
-                        <div key={idx} className="flex justify-between items-center p-4 border border-slate-100 rounded-2xl">
-                            <div>
-                                <p className="text-xs font-black text-slate-800 uppercase leading-none mb-1">{it.nome}</p>
-                                <p className="text-[10px] text-slate-400 font-bold uppercase">{it.qtd || it.quantidade} Unidades</p>
-                            </div>
-                            <p className="font-black text-slate-900 text-sm">{(Number(it.preco) * (it.qtd || it.quantidade)).toFixed(2)}</p>
-                        </div>
-                    ))}
-                </div>
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl">
+                  <div className="p-8 flex justify-between items-center border-b border-slate-100">
+                      <div>
+                          <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">DETALHES DO DÉBITO</p>
+                          <h3 className="text-2xl font-bold text-slate-900 uppercase tracking-tight">{vendaSelecionada.infoAdicional}</h3>
+                      </div>
+                      <button onClick={() => setVendaSelecionada(null)} className="p-2 text-slate-400 hover:text-red-500 transition-all"><X size={24}/></button>
+                  </div>
+                  
+                  <div className="p-8 space-y-3 max-h-[350px] overflow-y-auto">
+                      {vendaSelecionada.itens.map((it, idx) => (
+                          <div key={idx} className="flex justify-between items-center p-4 border border-slate-100 rounded-xl">
+                              <span className="font-bold text-slate-700 uppercase text-xs">{it.qtd}x {it.nome}</span>
+                              <span className="font-bold text-slate-900">{(it.preco * it.qtd).toFixed(2)}</span>
+                          </div>
+                      ))}
+                  </div>
 
-                <div className="p-8 bg-slate-900 text-white rounded-t-[3rem] space-y-6">
-                    <div className="flex justify-between items-center">
-                        <span className="text-xs font-black text-white/40 uppercase italic tracking-widest">Total Acumulado</span>
-                        <span className="text-4xl font-black italic tracking-tighter tabular-nums">{Number(vendaSelecionada.total).toFixed(2)} <small className="text-xs not-italic">{configLoja.moeda}</small></span>
-                    </div>
-                    <button 
-                        onClick={() => liquidarDivida(vendaSelecionada.id)}
-                        className="w-full bg-emerald-500 text-white py-6 rounded-[2rem] font-black uppercase tracking-[0.2em] hover:bg-emerald-600 transition-all shadow-xl shadow-emerald-900/20 flex items-center justify-center gap-3 active:scale-95"
-                    >
-                        <CheckCircle2 size={20}/> Confirmar Recebimento
-                    </button>
-                </div>
-            </div>
-        </div>
+                  <div className="p-8 bg-slate-50 border-t border-slate-100">
+                      <div className="flex justify-between items-center mb-6">
+                          <span className="text-[10px] font-bold uppercase text-slate-500">VALOR TOTAL ACUMULADO</span>
+                          <span className="text-3xl font-bold text-slate-900">{Number(vendaSelecionada.total).toFixed(2)} {configLoja.moeda}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button onClick={() => imprimirExtrato(vendaSelecionada)} className="flex items-center justify-center gap-2 border border-slate-300 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-white transition-all">
+                            <Printer size={16}/> IMPRIMIR EXTRATO
+                        </button>
+                        <button onClick={() => liquidarDivida(vendaSelecionada.id)} className="flex items-center justify-center gap-2 bg-emerald-600 text-white py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
+                            <CheckCircle2 size={16}/> CONFIRMAR PAGAMENTO
+                        </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );
