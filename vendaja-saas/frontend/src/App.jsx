@@ -12,6 +12,7 @@ import Inventario from './pages/Inventario';
 import Login from './pages/Login';
 import Registo from './pages/Registo';
 import RecuperarSenha from './pages/RecuperarSenha';
+import RedefinirSenha from './pages/RedefinirSenha'; // Importado
 import Definicoes from './pages/Definicoes';
 import Historico from './pages/Historico';
 import Equipa from './pages/Equipa';
@@ -101,7 +102,10 @@ function App() {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (!user) fazerLogout();
+      if (!user) {
+        // Apenas limpa o estado se não houver persistência manual
+        // mas mantemos o fazerLogout para consistência
+      }
     });
     return () => unsubscribeAuth();
   }, [fazerLogout]);
@@ -161,7 +165,10 @@ function App() {
     <Router>
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
         <Routes>
+          {/* ROTAS PÚBLICAS E DE RECUPERAÇÃO - FORA DO FLUXO PRINCIPAL */}
           <Route path="/loja/:slug" element={<LojaPublica />} />
+          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+          <Route path="/recuperar-senha" element={<RecuperarSenha />} />
 
           <Route path="*" element={
             <>
@@ -173,7 +180,6 @@ function App() {
                 <Routes>
                   <Route path="/login" element={!usuario ? <Login aoLogar={fazerLogin} /> : (isSuperAdmin ? <Navigate to="/gestao-mestra" /> : <Navigate to="/" />)} />
                   <Route path="/registo" element={!usuario ? <Registo setUsuario={fazerLogin} /> : <Navigate to="/" />} />
-                  <Route path="/recuperar-senha" element={<RecuperarSenha />} />
                   <Route path="/gestao-mestra" element={isSuperAdmin ? <SuperAdmin /> : <Navigate to="/login" />} />
 
                   <Route path="/" element={
@@ -190,10 +196,7 @@ function App() {
                   <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
                   <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
                   <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
-                  
-                  {/* ALTERAÇÃO AQUI: Removido o check 'isPremium' para permitir acesso ilimitado */}
                   <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
-                  
                   <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
                   <Route path="*" element={<Navigate to={usuario ? (isSuperAdmin ? "/gestao-mestra" : "/") : "/login"} />} />
                 </Routes>

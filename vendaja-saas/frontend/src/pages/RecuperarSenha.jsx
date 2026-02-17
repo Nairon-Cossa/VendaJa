@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { auth, db } from '../firebase'; // Ensure this path is correct
+import { auth, db } from '../firebase'; 
 import { sendPasswordResetEmail } from "firebase/auth";
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { 
@@ -12,14 +12,12 @@ import emailjs from '@emailjs/browser';
 const RecuperarSenha = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
-  const [passo, setPasso] = useState(1); // 1: Email, 2: OTP, 3: Sucesso
+  const [passo, setPasso] = useState(1); 
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
-  
   const [otpGerado, setOtpGerado] = useState('');
   const [otpInput, setOtpInput] = useState('');
 
-  // SEUS DADOS DO EMAILJS (Hardcoded para garantir funcionamento)
   const EMAILJS_SERVICE_ID = 'service_0jrg1rp';
   const EMAILJS_TEMPLATE_ID = 'template_izqwyeo';
   const EMAILJS_PUBLIC_KEY = 'BIe0eA3cQII1mgFcG';
@@ -34,20 +32,12 @@ const RecuperarSenha = () => {
     setErro('');
 
     try {
-      console.log("Iniciando busca de usuário...");
-
-      // 1. Verificar se o utilizador existe 
+      const emailFormatado = email.trim().toLowerCase();
       const usuariosRef = collection(db, "usuarios");
-      const q = query(
-        usuariosRef, 
-        where("email", "==", email.trim().toLowerCase()),
-        limit(1)
-      );
-      
+      const q = query(usuariosRef, where("email", "==", emailFormatado), limit(1));
       const snap = await getDocs(q);
 
       if (snap.empty) {
-        console.warn("Usuário não encontrado no Firestore");
         setErro("ESTE E-MAIL NÃO ESTÁ REGISTADO NO SISTEMA.");
         setCarregando(false);
         return;
@@ -57,38 +47,19 @@ const RecuperarSenha = () => {
       const novoOtp = Math.floor(100000 + Math.random() * 900000).toString();
       setOtpGerado(novoOtp);
 
-      console.log("Usuário encontrado via Firestore. Enviando email via EmailJS...");
-
-      // 2. Enviar via EmailJS
-      const templateParams = {
+      const parametrosTemplate = {
         to_name: dadosUsuario.nome || 'Utilizador',
-        to_email: email.trim().toLowerCase(), 
+        to_email: emailFormatado, 
+        reply_to: emailFormatado,
         otp_code: novoOtp,
         store_name: "Venda Já Pro"
       };
 
-      // FIX: Passamos a Public Key explicitamente como 4º argumento
-      await emailjs.send(
-        EMAILJS_SERVICE_ID, 
-        EMAILJS_TEMPLATE_ID, 
-        templateParams,
-        EMAILJS_PUBLIC_KEY
-      );
-      
-      console.log("Email enviado com sucesso!");
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, parametrosTemplate, EMAILJS_PUBLIC_KEY);
       setPasso(2);
 
     } catch (err) {
-      console.error("ERRO DETALHADO:", err); // Olhe o console do navegador (F12)
-
-      if (err.code === 'permission-denied') {
-        setErro("ERRO DE PERMISSÃO: O sistema não pode ler o banco de dados.");
-      } else if (err.text) {
-        // Erro do EmailJS geralmente vem na propriedade .text
-        setErro(`ERRO EMAIL: ${err.text}`);
-      } else {
-        setErro("FALHA AO ENVIAR CÓDIGO. VERIFIQUE A CONSOLA.");
-      }
+      setErro("FALHA AO ENVIAR CÓDIGO. VERIFIQUE A CONEXÃO.");
     } finally {
       setCarregando(false);
     }
@@ -96,7 +67,6 @@ const RecuperarSenha = () => {
 
   const validarOtpERefinir = async (e) => {
     if(e) e.preventDefault();
-    
     if (otpInput !== otpGerado) {
       setErro("CÓDIGO DE VERIFICAÇÃO INCORRECTO.");
       return;
@@ -106,12 +76,16 @@ const RecuperarSenha = () => {
     setErro('');
 
     try {
-      // 3. Disparar o Firebase Reset
-      await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+      // CONFIGURAÇÃO CRÍTICA: Redireciona para a sua nova página personalizada
+      const actionCodeSettings = {
+        url: 'https://venda-japro.vercel.app/redefinir-senha',
+        handleCodeInApp: true,
+      };
+
+      await sendPasswordResetEmail(auth, email.trim().toLowerCase(), actionCodeSettings);
       setPasso(3);
     } catch (err) {
-      console.error("Erro Firebase Reset:", err);
-      setErro("ERRO AO GERAR LINK DE SEGURANÇA: " + err.code);
+      setErro("ERRO AO GERAR LINK: " + err.code);
     } finally {
       setCarregando(false);
     }
@@ -120,33 +94,23 @@ const RecuperarSenha = () => {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-[#F1F5F9]">
       <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-500">
-        
-        {/* HEADER */}
         <div className="p-12 pb-8 text-center relative">
           {passo < 3 && (
-            <button 
-              type="button"
-              onClick={() => passo === 2 ? setPasso(1) : navigate('/login')}
-              className="absolute top-8 left-8 p-3 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-2xl transition-all group"
-            >
+            <button type="button" onClick={() => passo === 2 ? setPasso(1) : navigate('/login')} className="absolute top-8 left-8 p-3 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-2xl transition-all group">
               <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
             </button>
           )}
-          
           <div className="w-20 h-20 bg-blue-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-blue-600 shadow-inner">
             {passo === 1 && <Send size={32} />}
             {passo === 2 && <KeyRound size={32} className="animate-pulse" />}
             {passo === 3 && <CheckCircle2 size={32} className="text-emerald-500" />}
           </div>
-          
           <h2 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase">
             {passo === 1 && "Recuperar"}
             {passo === 2 && "Verificar"}
-            {passo === 3 && "Sucesso"}
+            {passo === 3 && "Quase Lá"}
           </h2>
-          <p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.2em] mt-3">
-            {passo === 3 ? "Verifique o seu e-mail" : "Proteção de Acesso VendaJá Pro"}
-          </p>
+          <p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.2em] mt-3">Proteção de Acesso VendaJá Pro</p>
         </div>
 
         <div className="px-10 pb-12">
@@ -162,22 +126,10 @@ const RecuperarSenha = () => {
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-5">E-mail da conta</label>
                 <div className="relative group">
                   <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-600 transition-colors" size={18} />
-                  <input 
-                    required 
-                    type="email" 
-                    className="w-full bg-slate-50 p-5 pl-16 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-600/10 focus:bg-white font-bold transition-all text-slate-700 placeholder:text-slate-300"
-                    placeholder="o-seu@email.com" 
-                    value={email} 
-                    onChange={e => setEmail(e.target.value)} 
-                  />
+                  <input required type="email" className="w-full bg-slate-50 p-5 pl-16 rounded-[2rem] outline-none border-2 border-transparent focus:border-blue-600/10 focus:bg-white font-bold transition-all text-slate-700 placeholder:text-slate-300" placeholder="o-seu@email.com" value={email} onChange={e => setEmail(e.target.value)} />
                 </div>
               </div>
-
-              <button 
-                type="submit"
-                disabled={carregando} 
-                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black shadow-xl flex items-center justify-center gap-3 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50"
-              >
+              <button type="submit" disabled={carregando} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black shadow-xl flex items-center justify-center gap-3 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50">
                 {carregando ? <Loader2 className="animate-spin" size={20} /> : <span className="uppercase tracking-[0.2em] text-[10px]">Enviar PIN de Segurança</span>}
               </button>
             </form>
@@ -185,27 +137,10 @@ const RecuperarSenha = () => {
 
           {passo === 2 && (
             <div className="space-y-8 text-center">
-              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">
-                Introduza o código de recuperação enviado para:<br/>
-                <span className="text-blue-600 lowercase">{email}</span>
-              </p>
-              
-              <input 
-                type="text" 
-                maxLength="6" 
-                value={otpInput} 
-                onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
-                className="w-full bg-slate-50 p-6 text-center text-4xl font-black tracking-[0.5em] rounded-[2.5rem] border-2 border-transparent focus:border-blue-600 outline-none transition-all" 
-                placeholder="000000" 
-              />
-
-              <button 
-                type="button"
-                onClick={validarOtpERefinir}
-                disabled={carregando || otpInput.length < 6}
-                className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase text-[10px] tracking-[0.2em] shadow-xl disabled:opacity-30 transition-all"
-              >
-                {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Validar e Redefinir"}
+              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Introduza o código enviado para:<br/><span className="text-blue-600 lowercase">{email}</span></p>
+              <input type="text" maxLength="6" value={otpInput} onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))} className="w-full bg-slate-50 p-6 text-center text-4xl font-black tracking-[0.5em] rounded-[2.5rem] border-2 border-transparent focus:border-blue-600 outline-none transition-all" placeholder="000000" />
+              <button type="button" onClick={validarOtpERefinir} disabled={carregando || otpInput.length < 6} className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase text-[10px] tracking-[0.2em] shadow-xl disabled:opacity-30 transition-all">
+                {carregando ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Validar e Continuar"}
               </button>
             </div>
           )}
@@ -214,18 +149,10 @@ const RecuperarSenha = () => {
             <div className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4">
               <div className="p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100">
                 <p className="text-emerald-700 text-[10px] font-bold leading-relaxed uppercase tracking-tight">
-                  PIN Validado! Enviámos agora um <span className="font-black text-emerald-900">e-mail com o link final</span>. Clique nele para escolher a sua nova senha.
+                  PIN Validado! Enviámos agora o <span className="font-black text-emerald-900">link de redefinição</span> para o seu e-mail. Clique nele para escolher a nova senha.
                 </p>
               </div>
-              
-              <div className="space-y-4">
-                <Link 
-                  to="/login" 
-                  className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all block"
-                >
-                  Voltar ao Login
-                </Link>
-              </div>
+              <Link to="/login" className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all block text-center">Voltar ao Login</Link>
             </div>
           )}
         </div>
