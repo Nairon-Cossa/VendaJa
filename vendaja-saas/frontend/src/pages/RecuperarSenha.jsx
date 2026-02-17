@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { auth, db } from '../firebase';
+import { auth, db } from '../firebase'; // Ensure this path is correct
 import { sendPasswordResetEmail } from "firebase/auth";
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { 
@@ -19,8 +19,13 @@ const RecuperarSenha = () => {
   const [otpGerado, setOtpGerado] = useState('');
   const [otpInput, setOtpInput] = useState('');
 
+  // SEUS DADOS DO EMAILJS (Hardcoded para garantir funcionamento)
+  const EMAILJS_SERVICE_ID = 'service_0jrg1rp';
+  const EMAILJS_TEMPLATE_ID = 'template_izqwyeo';
+  const EMAILJS_PUBLIC_KEY = 'BIe0eA3cQII1mgFcG';
+
   useEffect(() => {
-    emailjs.init("BIe0eA3cQII1mgFcG");
+    emailjs.init(EMAILJS_PUBLIC_KEY);
   }, []);
 
   const enviarCodigoRecuperacao = async (e) => {
@@ -29,7 +34,9 @@ const RecuperarSenha = () => {
     setErro('');
 
     try {
-      // 1. Verificar se o utilizador existe (Com limite de 1 para respeitar as novas regras)
+      console.log("Iniciando busca de usuário...");
+
+      // 1. Verificar se o utilizador existe 
       const usuariosRef = collection(db, "usuarios");
       const q = query(
         usuariosRef, 
@@ -40,6 +47,7 @@ const RecuperarSenha = () => {
       const snap = await getDocs(q);
 
       if (snap.empty) {
+        console.warn("Usuário não encontrado no Firestore");
         setErro("ESTE E-MAIL NÃO ESTÁ REGISTADO NO SISTEMA.");
         setCarregando(false);
         return;
@@ -49,6 +57,8 @@ const RecuperarSenha = () => {
       const novoOtp = Math.floor(100000 + Math.random() * 900000).toString();
       setOtpGerado(novoOtp);
 
+      console.log("Usuário encontrado via Firestore. Enviando email via EmailJS...");
+
       // 2. Enviar via EmailJS
       const templateParams = {
         to_name: dadosUsuario.nome || 'Utilizador',
@@ -57,27 +67,36 @@ const RecuperarSenha = () => {
         store_name: "Venda Já Pro"
       };
 
+      // FIX: Passamos a Public Key explicitamente como 4º argumento
       await emailjs.send(
-        'service_0jrg1rp', 
-        'template_izqwyeo', 
-        templateParams
+        EMAILJS_SERVICE_ID, 
+        EMAILJS_TEMPLATE_ID, 
+        templateParams,
+        EMAILJS_PUBLIC_KEY
       );
       
+      console.log("Email enviado com sucesso!");
       setPasso(2);
+
     } catch (err) {
-      console.error("Erro no Processo:", err);
-      // Se for erro de permissão do Firebase, avisar
+      console.error("ERRO DETALHADO:", err); // Olhe o console do navegador (F12)
+
       if (err.code === 'permission-denied') {
-        setErro("ERRO DE PERMISSÃO NO SISTEMA. CONTACTE O SUPORTE.");
+        setErro("ERRO DE PERMISSÃO: O sistema não pode ler o banco de dados.");
+      } else if (err.text) {
+        // Erro do EmailJS geralmente vem na propriedade .text
+        setErro(`ERRO EMAIL: ${err.text}`);
       } else {
-        setErro("FALHA AO ENVIAR CÓDIGO. TENTE NOVAMENTE.");
+        setErro("FALHA AO ENVIAR CÓDIGO. VERIFIQUE A CONSOLA.");
       }
     } finally {
       setCarregando(false);
     }
   };
 
-  const validarOtpERefinir = async () => {
+  const validarOtpERefinir = async (e) => {
+    if(e) e.preventDefault();
+    
     if (otpInput !== otpGerado) {
       setErro("CÓDIGO DE VERIFICAÇÃO INCORRECTO.");
       return;
@@ -87,7 +106,7 @@ const RecuperarSenha = () => {
     setErro('');
 
     try {
-      // 3. Disparar o Firebase Reset (O link que vai no template do Firebase)
+      // 3. Disparar o Firebase Reset
       await sendPasswordResetEmail(auth, email.trim().toLowerCase());
       setPasso(3);
     } catch (err) {
@@ -106,6 +125,7 @@ const RecuperarSenha = () => {
         <div className="p-12 pb-8 text-center relative">
           {passo < 3 && (
             <button 
+              type="button"
               onClick={() => passo === 2 ? setPasso(1) : navigate('/login')}
               className="absolute top-8 left-8 p-3 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-2xl transition-all group"
             >
@@ -154,6 +174,7 @@ const RecuperarSenha = () => {
               </div>
 
               <button 
+                type="submit"
                 disabled={carregando} 
                 className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black shadow-xl flex items-center justify-center gap-3 hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50"
               >
@@ -179,6 +200,7 @@ const RecuperarSenha = () => {
               />
 
               <button 
+                type="button"
                 onClick={validarOtpERefinir}
                 disabled={carregando || otpInput.length < 6}
                 className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black uppercase text-[10px] tracking-[0.2em] shadow-xl disabled:opacity-30 transition-all"
