@@ -10,8 +10,15 @@ import {
   WifiOff,
   Settings,
   Clock,
-  Menu, // New Icon
-  X     // New Icon
+  Menu, 
+  X,
+  // Novos ícones para os ramos de atividade
+  BookOpen,      // Papelaria
+  Utensils,      // Restaurante / Bar
+  Smartphone,    // Eletrónicos / Celulares
+  Scissors,      // Barbearia / Salão
+  ShoppingBag,   // Boutique / Roupa
+  Car            // Peças / Mecânica
 } from 'lucide-react';
 
 const Navbar = ({ usuario, fazerLogout, isOnline }) => {
@@ -19,11 +26,22 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   const isActive = (path) => location.pathname === path;
-  
-  // Helper to close menu when a link is clicked
   const closeMenu = () => setIsMobileMenuOpen(false);
 
-  // Lógica para mostrar funcionalidades restritas
+  // LÓGICA DE ÍCONE DINÂMICO POR RAMO
+  const renderBusinessIcon = (size = 24) => {
+    const ramo = usuario?.tipoNegocio?.toLowerCase() || '';
+    
+    if (ramo.includes('papelaria') || ramo.includes('escola')) return <BookOpen size={size} />;
+    if (ramo.includes('restaurante') || ramo.includes('bar') || ramo.includes('comida')) return <Utensils size={size} />;
+    if (ramo.includes('eletr') || ramo.includes('celular') || ramo.includes('phone')) return <Smartphone size={size} />;
+    if (ramo.includes('salao') || ramo.includes('barbe') || ramo.includes('estetica')) return <Scissors size={size} />;
+    if (ramo.includes('boutique') || ramo.includes('roupa') || ramo.includes('moda')) return <ShoppingBag size={size} />;
+    if (ramo.includes('pecas') || ramo.includes('carro') || ramo.includes('auto')) return <Car size={size} />;
+    
+    return <Store size={size} />; // Default
+  };
+
   const isPremium = usuario?.plano === 'premium' || usuario?.role === 'superadmin' || usuario?.email === "naironcossa.dev@gmail.com";
 
   return (
@@ -31,10 +49,10 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
       <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
         
         <div className="flex items-center gap-10">
-          {/* LOGO */}
+          {/* LOGO DINÂMICO */}
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-100">
-              <Store size={24} />
+            <div className="w-11 h-11 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-100 transition-all">
+              {renderBusinessIcon(24)}
             </div>
             <div>
               <h1 className="text-xl font-black text-slate-800 tracking-tighter uppercase italic leading-none">VendaJá</h1>
@@ -47,7 +65,7 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
             </div>
           </div>
 
-          {/* DESKTOP NAV LINKS (Hidden on Mobile) */}
+          {/* DESKTOP NAV LINKS */}
           <div className="hidden md:flex items-center gap-1">
             {usuario.role === 'admin' && (
               <Link to="/" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
@@ -59,7 +77,6 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
               <ShoppingCart size={18} /> Vender
             </Link>
 
-            {/* LINK DE FIADOS */}
             <Link to="/fiados" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/fiados') ? 'bg-amber-100 text-amber-700' : 'text-slate-500 hover:bg-slate-50'}`}>
               <Clock size={18} /> Fiados
             </Link>
@@ -68,7 +85,6 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
               <Package size={18} /> Stock
             </Link>
 
-            {/* LINK: DEFINIÇÕES (Admin) */}
             {usuario.role === 'admin' && (
               <Link to="/definicoes" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/definicoes') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
                 <Settings size={18} /> Definições
@@ -79,11 +95,9 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
 
         {/* RIGHT SIDE ACTIONS */}
         <div className="flex items-center gap-4">
-          
-          {/* USER INFO (Hidden on very small screens) */}
           <div className="hidden sm:flex flex-col items-end border-r border-slate-100 pr-6">
             <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em] mb-1">
-              {usuario.plano === 'premium' ? '👑 Premium' : (usuario.tipoNegocio || 'Plano Básico')}
+              {isPremium ? '👑 Premium' : (usuario.tipoNegocio || 'Plano Básico')}
             </span>
             <span className="text-sm font-black text-slate-800">
               {usuario.nome}
@@ -99,7 +113,6 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
             <LogOut size={20} className="group-hover:translate-x-1 transition-transform" />
           </button>
 
-          {/* MOBILE MENU TOGGLE BUTTON (Visible only on Mobile) */}
           <button 
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"

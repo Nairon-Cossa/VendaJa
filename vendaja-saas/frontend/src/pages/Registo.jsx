@@ -3,7 +3,7 @@ import {
   Store, Utensils, Beer, Pill, Smartphone, 
   Shirt, ArrowLeft, CheckCircle2, 
   Mail, Loader2, Sparkles, ShieldAlert, ImagePlus, KeyRound, Briefcase, ChevronRight,
-  MessageCircle 
+  MessageCircle, BookOpen 
 } from 'lucide-react';
 import { auth, db, storage } from '../firebase';
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
@@ -19,6 +19,7 @@ const TIPOS_NEGOCIO = [
   { id: 'Farmácia', label: 'Farmácia Pequena', icon: <Pill size={20} />, color: 'bg-red-500' },
   { id: 'Eletrónicos', label: 'Loja de Telefones & IT', icon: <Smartphone size={20} />, color: 'bg-blue-500' },
   { id: 'Loja de Roupa', label: 'Roupa & Cosméticos', icon: <Shirt size={20} />, color: 'bg-pink-500' },
+  { id: 'Papelaria', label: 'Papelaria & Escolar', icon: <BookOpen size={20} />, color: 'bg-violet-500' },
   { id: 'Geral/Loja', label: 'Outro tipo de Loja', icon: <Briefcase size={20} />, color: 'bg-slate-500' },
 ];
 

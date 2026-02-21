@@ -155,12 +155,18 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
             </h2>
             {isPremium && <Crown size={24} className="text-amber-500" />}
           </div>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">
-            Loja: <span className="text-slate-900">{usuario.nomeLoja || 'Unidade Local'}</span>
-            <span className={`ml-3 px-3 py-1 rounded-full text-[9px] font-black ${isPremium ? 'bg-amber-100 text-amber-600 border border-amber-200' : 'bg-slate-100 text-slate-400'}`}>
+          <div className="flex items-center gap-3 mt-2">
+            <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest">
+              Loja: <span className="text-slate-900">{usuario.nomeLoja || 'Unidade Local'}</span>
+            </p>
+            {/* BADGE DINÂMICO DO TIPO DE NEGÓCIO */}
+            <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md text-[8px] font-black uppercase border border-blue-100">
+              {usuario.tipoNegocio || 'Geral'}
+            </span>
+            <span className={`px-3 py-1 rounded-full text-[9px] font-black ${isPremium ? 'bg-amber-100 text-amber-600 border border-amber-200' : 'bg-slate-100 text-slate-400'}`}>
               {isPremium ? 'PLATINUM ACCESS' : 'BASIC PLAN'}
             </span>
-          </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl border shadow-sm self-start">
