@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { db, auth } from '../firebase'; 
-import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc, deleteDoc } from "firebase/firestore";
 import { 
   Loader2, Search, ShieldCheck, KeyRound, Eye, EyeOff, TrendingUp, 
   ShoppingBag, Store, Users, AlertCircle, CheckCircle2, DollarSign, Activity, Globe,
-  Zap, Crown
+  Zap, Crown, Trash2
 } from 'lucide-react';
 
 const SuperAdmin = () => {
@@ -113,7 +113,6 @@ const SuperAdmin = () => {
     } catch (error) { alert("FALHA NA OPERAÇÃO."); }
   };
 
-  // NOVA FUNÇÃO: Alternar entre Básico e Premium no Firestore
   const alterarPlano = async (uid, planoAtual) => {
     const novoPlano = planoAtual === 'premium' ? 'basico' : 'premium';
     if (!window.confirm(`ALTERAR PLANO PARA ${novoPlano.toUpperCase()}?`)) return;
@@ -121,6 +120,30 @@ const SuperAdmin = () => {
       await updateDoc(doc(db, "usuarios", uid), { plano: novoPlano });
       setClientes(clientes.map(c => c.id === uid ? { ...c, plano: novoPlano } : c));
     } catch (error) { alert("FALHA AO ALTERAR PLANO."); }
+  };
+
+  // NOVA FUNÇÃO: Apagar Conta
+  const apagarConta = async (uid, statusAtual) => {
+    if (!window.confirm("ALERTA CRÍTICO: Tem a certeza absoluta que deseja APAGAR esta unidade? Esta ação é irreversível e removerá os dados da base de dados.")) return;
+    
+    try {
+      // Remove o documento do Firestore
+      await deleteDoc(doc(db, "usuarios", uid));
+      
+      // Atualiza o estado local para remover a loja da lista
+      setClientes(clientes.filter(c => c.id !== uid));
+      
+      // Atualiza as métricas
+      setMetricas(prev => ({
+        ...prev,
+        totalLojas: prev.totalLojas - 1,
+        lojasAtivas: statusAtual === 'ativo' ? prev.lojasAtivas - 1 : prev.lojasAtivas
+      }));
+      
+    } catch (error) {
+      console.error("Erro ao apagar conta:", error);
+      alert("FALHA AO APAGAR A CONTA.");
+    }
   };
 
   if (!validado) {
@@ -265,19 +288,19 @@ const SuperAdmin = () => {
                     <div className="flex flex-wrap gap-3 w-full lg:w-auto">
                       <button 
                         onClick={() => alterarPlano(cliente.id, cliente.plano)}
-                        className={`flex-1 lg:w-44 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
+                        className={`flex-1 lg:w-40 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
                           isPremium 
                           ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:scale-105 shadow-amber-200' 
                           : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                         }`}
                       >
                         {isPremium ? <Crown size={14} /> : <Zap size={14} />}
-                        {isPremium ? 'Plano Premium' : 'Ativar Premium'}
+                        {isPremium ? 'Premium' : '+ Premium'}
                       </button>
 
                       <button 
                         onClick={() => alterarStatus(cliente.id, cliente.status)}
-                        className={`flex-1 lg:w-40 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
+                        className={`flex-1 lg:w-36 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
                           isAtivo 
                           ? 'bg-white text-red-500 border border-red-100 hover:bg-red-500 hover:text-white' 
                           : 'bg-emerald-500 text-white hover:bg-emerald-600'
@@ -285,6 +308,14 @@ const SuperAdmin = () => {
                       >
                         {isAtivo ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
                         {isAtivo ? 'Suspender' : 'Reativar'}
+                      </button>
+
+                      <button 
+                        onClick={() => apagarConta(cliente.id, cliente.status)}
+                        title="Apagar permanentemente"
+                        className="w-full lg:w-16 py-5 rounded-[1.5rem] text-red-500 bg-red-50 hover:bg-red-600 hover:text-white transition-all shadow-sm flex items-center justify-center border border-red-100"
+                      >
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>
