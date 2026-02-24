@@ -12,7 +12,6 @@ const Equipa = ({ usuario, avisar }) => {
   const [mostrarModal, setMostrarModal] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
-  // Estado para o novo funcionário
   const [novoMembro, setNovoMembro] = useState({
     nome: '',
     email: '',
@@ -20,13 +19,15 @@ const Equipa = ({ usuario, avisar }) => {
     role: 'caixa'
   });
 
-  // 1. Carregar membros da mesma loja em tempo real
+  // 1. Carregar membros ligados a esta loja
   useEffect(() => {
-    if (!usuario?.lojaId) return;
+    // Usamos o lojaId para garantir que o dono veja todos da sua unidade
+    const targetLojaId = usuario?.lojaId || usuario?.uid;
+    if (!targetLojaId) return;
 
     const q = query(
       collection(db, "usuarios"),
-      where("lojaId", "==", usuario.lojaId)
+      where("lojaId", "==", targetLojaId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -34,7 +35,7 @@ const Equipa = ({ usuario, avisar }) => {
         id: doc.id,
         ...doc.data()
       }));
-      // Filtramos para não mostrar o próprio dono na lista de gestão
+      // Filtramos para não mostrar o próprio dono (quem está logado) na lista de baixo
       setMembros(lista.filter(m => m.uid !== usuario.uid));
       setCarregando(false);
     }, (error) => {
@@ -45,27 +46,33 @@ const Equipa = ({ usuario, avisar }) => {
     return () => unsubscribe();
   }, [usuario, avisar]);
 
-  // 2. Função para Adicionar Membro (COM LÓGICA DE LIMITE DE PLANO)
+  // 2. Função para Adicionar Membro (AJUSTADA PARA O BLOQUEIO DE LIMITE)
   const adicionarMembro = async (e) => {
     e.preventDefault();
     setSalvando(true);
 
     try {
-      // --- VERIFICAÇÃO DE LIMITE DE PLANO ---
-      // Buscamos os dados mais recentes do dono/loja para verificar o maxUsers
-      const lojaDoc = await getDoc(doc(db, "usuarios", usuario.lojaId));
-      const dadosPlan = lojaDoc.data();
+      // O ID da loja é o UID do dono original
+      const meuLojaId = usuario?.lojaId || usuario?.uid;
+
+      // 1. Verificar o documento do DONO para ver o limite real
+      const lojaRef = doc(db, "usuarios", meuLojaId);
+      const lojaSnap = await getDoc(lojaRef);
+      const dadosLoja = lojaSnap.data();
+
+      // 2. Definir o limite (Assume 1 se não existir no banco)
+      const limiteMaximo = dadosLoja?.maxUsers || 1;
       
-      const limitePermitido = dadosPlan?.maxUsers || 1; // Padrão é 1 se não definido
-      const totalAtual = membros.length + 1; // +1 inclui o administrador/dono
+      // 3. Contar: Membros atuais + 1 (que é o Dono)
+      const totalNoSistema = membros.length + 1;
 
-      if (totalAtual >= limitePermitido) {
-        avisar(`LIMITE ATINGIDO: O seu plano (${dadosPlan?.plano || 'Básico'}) permite apenas ${limitePermitido} usuários no total.`, "erro");
+      if (totalNoSistema >= limiteMaximo) {
+        avisar(`BLOQUEADO: O teu limite é de ${limiteMaximo} utilizador(es). Faz upgrade para adicionar mais.`, "erro");
         setSalvando(false);
-        return;
+        return; // PARA AQUI
       }
-      // --- FIM DA VERIFICAÇÃO ---
 
+      // Se passou o bloqueio, gera o acesso
       const idGerado = `FUNC_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       
       const dadosFuncionario = {
@@ -73,18 +80,19 @@ const Equipa = ({ usuario, avisar }) => {
         nome: novoMembro.nome,
         email: novoMembro.email.toLowerCase().trim(),
         telemovel: novoMembro.telemovel,
-        role: novoMembro.role,
-        lojaId: usuario.lojaId,
+        role: novoMembro.role, // 'caixa' ou 'admin'
+        lojaId: meuLojaId,    // Vincula ao dono
         nomeLoja: usuario.nomeLoja,
+        status: 'ativo',       // Funcionário já entra ativo
         adicionadoPor: usuario.nome,
-        dataAcesso: new Date().toISOString()
+        createdAt: new Date().toISOString()
       };
 
       await setDoc(doc(db, "usuarios", idGerado), dadosFuncionario);
       
       setMostrarModal(false);
       setNovoMembro({ nome: '', email: '', telemovel: '', role: 'caixa' });
-      avisar("FUNCIONÁRIO AUTORIZADO!", "sucesso");
+      avisar("FUNCIONÁRIO ADICIONADO!", "sucesso");
 
     } catch (error) {
       console.error(error);
@@ -94,14 +102,13 @@ const Equipa = ({ usuario, avisar }) => {
     }
   };
 
-  // 3. Função para Remover Membro
   const removerMembro = async (id, nome) => {
-    if (window.confirm(`Tens a certeza que desejas revogar o acesso de ${nome}?`)) {
+    if (window.confirm(`Remover acesso de ${nome}?`)) {
       try {
         await deleteDoc(doc(db, "usuarios", id));
-        avisar("ACESSO REVOGADO COM SUCESSO", "sucesso");
+        avisar("ACESSO REMOVIDO", "sucesso");
       } catch (error) {
-        avisar("ERRO AO REMOVER MEMBRO", "erro");
+        avisar("ERRO AO REMOVER", "erro");
       }
     }
   };
@@ -109,12 +116,11 @@ const Equipa = ({ usuario, avisar }) => {
   return (
     <div className="space-y-8 animate-fade-in pb-10">
       
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 italic uppercase tracking-tighter">Gestão de Equipa</h2>
           <p className="text-slate-500 font-bold text-sm uppercase tracking-widest mt-1">
-            Loja: <span className="text-blue-600">{usuario.nomeLoja}</span>
+            Controlo de Acessos: <span className="text-blue-600">{usuario.nomeLoja}</span>
           </p>
         </div>
         
@@ -127,49 +133,37 @@ const Equipa = ({ usuario, avisar }) => {
         </button>
       </div>
 
-      {/* LISTA DE MEMBROS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {carregando ? (
           <div className="col-span-full py-20 flex flex-col items-center justify-center gap-4 text-slate-400">
             <Loader2 className="animate-spin" size={32} />
-            <p className="font-black text-[10px] uppercase tracking-[0.3em]">Sincronizando Colaboradores...</p>
+            <p className="font-black text-[10px] uppercase tracking-[0.3em]">Validando Equipa...</p>
           </div>
         ) : membros.length === 0 ? (
           <div className="col-span-full bg-white p-20 rounded-[3rem] text-center border border-slate-100 flex flex-col items-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-4">
-               <Users size={32} />
+                <Users size={32} />
             </div>
-            <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Ainda não tens funcionários registados</p>
+            <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Apenas tu (Dono) tens acesso no momento.</p>
           </div>
         ) : (
           membros.map(membro => (
-            <div key={membro.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative overflow-hidden">
+            <div key={membro.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
               <div className="absolute top-0 right-0 p-6">
-                <span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-xl tracking-widest shadow-sm ${
-                  membro.role === 'admin' 
-                  ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' 
-                  : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                <span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-xl tracking-widest ${
+                  membro.role === 'admin' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'
                 }`}>
                   {membro.role}
                 </span>
               </div>
 
-              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 mb-6 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
+              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 mb-6">
                 <UserCircle size={32} />
               </div>
               
               <div className="space-y-1">
                 <h3 className="font-black text-slate-900 uppercase text-lg italic tracking-tight">{membro.nome}</h3>
-                <div className="flex flex-col gap-1 pt-2">
-                  <div className="flex items-center gap-2 text-slate-400">
-                    <Mail size={12} className="shrink-0" />
-                    <span className="text-xs font-bold truncate">{membro.email}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-400">
-                    <Phone size={12} className="shrink-0" />
-                    <span className="text-xs font-bold">{membro.telemovel || 'Sem telefone'}</span>
-                  </div>
-                </div>
+                <p className="text-xs font-bold text-slate-400 truncate">{membro.email}</p>
               </div>
 
               <div className="mt-8 pt-6 border-t border-slate-50">
@@ -187,76 +181,46 @@ const Equipa = ({ usuario, avisar }) => {
 
       {/* MODAL ADICIONAR */}
       {mostrarModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden">
             <div className="p-10 pb-6 flex justify-between items-center">
-              <div>
-                <h2 className="text-2xl font-black text-slate-900 italic uppercase tracking-tighter">Novo Acesso</h2>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Autorizar Colaborador</p>
-              </div>
-              <button onClick={() => setMostrarModal(false)} className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all"><X size={20}/></button>
+              <h2 className="text-2xl font-black text-slate-900 italic uppercase tracking-tighter">Novo Acesso</h2>
+              <button onClick={() => setMostrarModal(false)} className="text-slate-400 hover:text-red-500"><X size={24}/></button>
             </div>
 
             <form onSubmit={adicionarMembro} className="p-10 pt-0 space-y-5">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest">Nome do Colaborador</label>
-                <input 
-                  required 
-                  placeholder="Ex: João Silva"
-                  className="w-full bg-slate-50 p-5 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all" 
-                  value={novoMembro.nome} 
-                  onChange={e => setNovoMembro({...novoMembro, nome: e.target.value})} 
-                />
-              </div>
+              <input 
+                required 
+                placeholder="Nome do Funcionário"
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                value={novoMembro.nome} 
+                onChange={e => setNovoMembro({...novoMembro, nome: e.target.value})} 
+              />
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest">E-mail de Login</label>
-                <input 
-                  required 
-                  type="email" 
-                  placeholder="email@empresa.com"
-                  className="w-full bg-slate-50 p-5 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all" 
-                  value={novoMembro.email} 
-                  onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
-                />
-              </div>
+              <input 
+                required 
+                type="email" 
+                placeholder="E-mail de Login"
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                value={novoMembro.email} 
+                onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
+              />
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest">Cargo</label>
-                  <select 
-                    className="w-full bg-slate-50 p-5 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all cursor-pointer"
-                    value={novoMembro.role} 
-                    onChange={e => setNovoMembro({...novoMembro, role: e.target.value})}
-                  >
-                    <option value="caixa">Caixa</option>
-                    <option value="admin">Gestor (Admin)</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 ml-4 tracking-widest">Contacto</label>
-                  <input 
-                    placeholder="84..."
-                    className="w-full bg-slate-50 p-5 rounded-2xl outline-none border-2 border-transparent focus:border-blue-500 focus:bg-white font-bold transition-all" 
-                    value={novoMembro.telemovel} 
-                    onChange={e => setNovoMembro({...novoMembro, telemovel: e.target.value})} 
-                  />
-                </div>
-              </div>
-
-              <div className="bg-blue-50 p-4 rounded-2xl flex gap-3 items-start border border-blue-100 mt-2">
-                <AlertCircle className="text-blue-500 shrink-0" size={18} />
-                <p className="text-[10px] font-bold text-blue-700 leading-relaxed uppercase">
-                  O funcionário poderá entrar imediatamente usando o e-mail via "Link Mágico".
-                </p>
-              </div>
+              <select 
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none"
+                value={novoMembro.role} 
+                onChange={e => setNovoMembro({...novoMembro, role: e.target.value})}
+              >
+                <option value="caixa">Acesso: Apenas Vendas (Caixa)</option>
+                <option value="admin">Acesso: Gestor (Admin)</option>
+              </select>
 
               <button 
                 type="submit"
                 disabled={salvando} 
-                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black mt-4 flex items-center justify-center gap-3 hover:bg-blue-600 transition-all shadow-xl shadow-blue-100 disabled:opacity-50"
+                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black mt-4 flex items-center justify-center gap-3 hover:bg-blue-600 transition-all disabled:opacity-50"
               >
-                {salvando ? <Loader2 className="animate-spin" size={18} /> : <><UserPlus size={18}/> CONFIRMAR ACESSO</>}
+                {salvando ? <Loader2 className="animate-spin" size={18} /> : "CRIAR CREDENCIAIS"}
               </button>
             </form>
           </div>

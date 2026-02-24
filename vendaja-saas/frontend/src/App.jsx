@@ -12,7 +12,7 @@ import Inventario from './pages/Inventario';
 import Login from './pages/Login';
 import Registo from './pages/Registo';
 import RecuperarSenha from './pages/RecuperarSenha';
-import RedefinirSenha from './pages/RedefinirSenha'; // Importado
+import RedefinirSenha from './pages/RedefinirSenha';
 import Definicoes from './pages/Definicoes';
 import Historico from './pages/Historico';
 import Equipa from './pages/Equipa';
@@ -49,7 +49,7 @@ const TelaBloqueio = ({ usuario, fazerLogout, MEU_WHATSAPP }) => {
             <LogOut size={16} /> Sair da Conta
           </button>
         </div>
-        <p className="mt-8 text-[9px] font-bold text-slate-300 uppercase tracking-widest">ID da Loja: {usuario?.uid}</p>
+        <p className="mt-8 text-[9px] font-bold text-slate-300 uppercase tracking-widest">ID da Unidade: {usuario?.uid}</p>
       </div>
     </div>
   );
@@ -80,14 +80,15 @@ function App() {
     localStorage.setItem('vendaJa_sessao', JSON.stringify(dados));
   };
 
+  // VERIFICAÇÕES DE PODER REFORÇADAS
   const isSuperAdmin = usuario?.email === "naironcossa.dev@gmail.com" || usuario?.role === 'superadmin';
+  const isAdmin = usuario?.role === 'admin' || (usuario?.uid === usuario?.lojaId);
 
   const [configLoja, setConfigLoja] = useState({
     nuit: '', endereco: '', telefone: '', moeda: 'MT', mensagemRecibo: 'Obrigado!', logo: null
   });
 
   const avisar = (msg, tipo = "info") => {
-    // Aqui podes integrar com um Toast futuramente, por agora mantém o log
     console.log(`[${tipo.toUpperCase()}]: ${msg}`);
   };
 
@@ -103,17 +104,18 @@ function App() {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        // Lógica de limpeza se necessário
+      if (!user && !localStorage.getItem('vendaJa_sessao')) {
+        fazerLogout();
       }
     });
     return () => unsubscribeAuth();
   }, [fazerLogout]);
 
+  // Sincronização do Perfil do Usuário
   useEffect(() => {
     if (!usuario?.uid) {
-      const timer = setTimeout(() => setCarregando(false), 0);
-      return () => clearTimeout(timer);
+      setCarregando(false);
+      return;
     }
     
     const unsubUser = onSnapshot(doc(db, "usuarios", usuario.uid), (docSnap) => {
@@ -133,24 +135,30 @@ function App() {
     return () => unsubUser();
   }, [usuario?.uid, fazerLogout]);
 
+  // Sincronização das Configurações da Loja (Usa o lojaId para funcionários verem o recibo certo)
   useEffect(() => {
-    if (!usuario?.uid || usuario.status !== 'ativo') return;
-    const unsubConfig = onSnapshot(doc(db, "configuracoes", usuario.uid), (docSnap) => {
+    const targetId = usuario?.lojaId || usuario?.uid;
+    if (!targetId || usuario?.status !== 'ativo') return;
+
+    const unsubConfig = onSnapshot(doc(db, "configuracoes", targetId), (docSnap) => {
       if (docSnap.exists()) {
         setConfigLoja(docSnap.data());
       }
     });
     return () => unsubConfig();
-  }, [usuario?.uid, usuario?.status]);
+  }, [usuario?.lojaId, usuario?.uid, usuario?.status]);
 
+  // Sincronização de Produtos (Usa o lojaId para funcionários venderem o stock do patrão)
   useEffect(() => {
-    if (!usuario?.uid || usuario.status !== 'ativo') return;
-    const q = query(collection(db, "produtos"), where("lojaId", "==", usuario.uid));
+    const targetId = usuario?.lojaId || usuario?.uid;
+    if (!targetId || usuario?.status !== 'ativo') return;
+
+    const q = query(collection(db, "produtos"), where("lojaId", "==", targetId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setProdutos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
     return () => unsubscribe(); 
-  }, [usuario?.uid, usuario?.status]);
+  }, [usuario?.lojaId, usuario?.uid, usuario?.status]);
 
   if (carregando) {
     return (
@@ -165,7 +173,6 @@ function App() {
     <Router>
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
         <Routes>
-          {/* ROTAS PÚBLICAS E DE RECUPERAÇÃO */}
           <Route path="/loja/:slug" element={<LojaPublica />} />
           <Route path="/redefinir-senha" element={<RedefinirSenha />} />
           <Route path="/recuperar-senha" element={<RecuperarSenha />} />
@@ -182,25 +189,27 @@ function App() {
                   <Route path="/registo" element={!usuario ? <Registo setUsuario={fazerLogin} /> : <Navigate to="/" />} />
                   <Route path="/gestao-mestra" element={isSuperAdmin ? <SuperAdmin /> : <Navigate to="/login" />} />
 
+                  {/* ROTA RAIZ: Dono vai para Dashboard, Funcionário vai para Caixa */}
                   <Route path="/" element={
                     usuario ? (
                       isSuperAdmin ? <Navigate to="/gestao-mestra" /> : (
                         usuario.status === 'ativo' ? (
-                          usuario.role === 'admin' ? <Dashboard produtos={produtos} usuario={usuario} /> : <Navigate to="/caixa" />
+                          isAdmin ? <Dashboard produtos={produtos} usuario={usuario} /> : <Navigate to="/caixa" />
                         ) : <TelaBloqueio usuario={usuario} fazerLogout={fazerLogout} MEU_WHATSAPP={MEU_WHATSAPP} />
                       )
                     ) : <Navigate to="/login" />
                   } />
                   
+                  {/* ACESSOS GERAIS */}
                   <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
-                  <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
-                  
-                  {/* UPDATE AQUI: Adicionado a prop avisar para o componente Equipa */}
-                  <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} avisar={avisar} /> : <Navigate to="/" />} />
-                  
                   <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
                   <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
-                  <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+
+                  {/* ACESSOS RESTRITOS (APENAS ADMIN) */}
+                  <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
+                  <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Equipa usuario={usuario} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  
                   <Route path="*" element={<Navigate to={usuario ? (isSuperAdmin ? "/gestao-mestra" : "/") : "/login"} />} />
                 </Routes>
               </main>

@@ -12,7 +12,7 @@ import {
   Clock,
   Menu, 
   X,
-  // Novos ícones para os ramos de atividade
+  Users, // Ícone para Equipa
   BookOpen,      // Papelaria
   Utensils,      // Restaurante / Bar
   Smartphone,    // Eletrónicos / Celulares
@@ -27,6 +27,9 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
   
   const isActive = (path) => location.pathname === path;
   const closeMenu = () => setIsMobileMenuOpen(false);
+
+  // LÓGICA DE ADMINISTRAÇÃO REFORÇADA
+  const isAdmin = usuario?.role === 'admin' || (usuario?.uid === usuario?.lojaId);
 
   // LÓGICA DE ÍCONE DINÂMICO POR RAMO
   const renderBusinessIcon = (size = 24) => {
@@ -67,7 +70,7 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
 
           {/* DESKTOP NAV LINKS */}
           <div className="hidden md:flex items-center gap-1">
-            {usuario.role === 'admin' && (
+            {isAdmin && (
               <Link to="/" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
                 <LayoutDashboard size={18} /> Painel
               </Link>
@@ -85,10 +88,16 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
               <Package size={18} /> Stock
             </Link>
 
-            {usuario.role === 'admin' && (
-              <Link to="/definicoes" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/definicoes') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <Settings size={18} /> Definições
-              </Link>
+            {isAdmin && (
+              <>
+                <Link to="/equipa" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/equipa') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  <Users size={18} /> Equipa
+                </Link>
+
+                <Link to="/definicoes" className={`flex items-center gap-2 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isActive('/definicoes') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  <Settings size={18} /> Definições
+                </Link>
+              </>
             )}
           </div>
         </div>
@@ -125,7 +134,7 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
       {/* MOBILE MENU DROPDOWN */}
       {isMobileMenuOpen && (
         <div className="md:hidden bg-white border-b border-slate-200 shadow-xl absolute top-20 left-0 w-full p-4 flex flex-col gap-2 animate-in slide-in-from-top-2">
-          {usuario.role === 'admin' && (
+          {isAdmin && (
             <Link 
               to="/" 
               onClick={closeMenu}
@@ -159,14 +168,24 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
             <Package size={20} /> Stock
           </Link>
 
-          {usuario.role === 'admin' && (
-            <Link 
-              to="/definicoes" 
-              onClick={closeMenu}
-              className={`flex items-center gap-3 px-5 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all ${isActive('/definicoes') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              <Settings size={20} /> Definições
-            </Link>
+          {isAdmin && (
+            <>
+              <Link 
+                to="/equipa" 
+                onClick={closeMenu}
+                className={`flex items-center gap-3 px-5 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all ${isActive('/equipa') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                <Users size={20} /> Equipa
+              </Link>
+
+              <Link 
+                to="/definicoes" 
+                onClick={closeMenu}
+                className={`flex items-center gap-3 px-5 py-4 rounded-xl font-black text-sm uppercase tracking-widest transition-all ${isActive('/definicoes') ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+              >
+                <Settings size={20} /> Definições
+              </Link>
+            </>
           )}
         </div>
       )}
