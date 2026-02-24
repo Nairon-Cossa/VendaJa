@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { 
-  Users, UserPlus, Trash2, Shield, Copy,
-  UserCircle, Mail, Phone, Loader2, X, AlertCircle, Lock
+  Users, UserPlus, Trash2, Copy,
+  UserCircle, Loader2, X, Lock
 } from 'lucide-react';
 
 const Equipa = ({ usuario, avisar }) => {
@@ -20,21 +20,31 @@ const Equipa = ({ usuario, avisar }) => {
     role: 'caixa'
   });
 
+  // Função utilitária para evitar o erro "e is not a function"
+  const safeAvisar = useCallback((msg, tipo) => {
+    if (typeof avisar === 'function') {
+      avisar(msg, tipo);
+    } else {
+      console.warn(`[Aviso]: ${msg} (${tipo})`);
+    }
+  }, [avisar]);
+
   // 1. Carregar membros ligados a esta empresa/loja
   useEffect(() => {
-    // Para bater com as regras: Se sou funcionário, uso meu empresaId. Se sou dono, uso meu uid.
-    const idParaFiltro = usuario?.empresaId || usuario?.uid;
+    const idMestre = usuario?.empresaId || usuario?.uid;
     
-    if (!idParaFiltro) return;
+    if (!idMestre) {
+      setCarregando(false);
+      return;
+    }
 
-    // A regra 'allow list' espera explicitamente o filtro lojaId ou empresaId
-    // Vamos usar empresaId como padrão para centralizar
+    // A Query deve usar o campo que as suas regras protegem (empresaId)
     const q = query(
       collection(db, "usuarios"),
-      where("empresaId", "==", idParaFiltro)
+      where("empresaId", "==", idMestre)
     );
 
-    // Corrigindo o erro "e is not a function" usando a sintaxe de objeto
+    // Usando a sintaxe de objeto no onSnapshot para evitar erros de callback
     const unsubscribe = onSnapshot(q, {
       next: (snapshot) => {
         const lista = snapshot.docs.map(doc => ({
@@ -48,45 +58,45 @@ const Equipa = ({ usuario, avisar }) => {
       error: (error) => {
         console.error("Erro Firestore Equipa:", error);
         setCarregando(false);
-        // Tratamento silencioso para não travar a UI, apenas avisa
         if (error.code === 'permission-denied') {
-          avisar("ACESSO NEGADO: VERIFIQUE SEU PERFIL", "erro");
+          safeAvisar("SEM PERMISSÃO PARA VER A EQUIPA", "erro");
         }
       }
     });
 
     return () => unsubscribe();
-  }, [usuario, avisar]);
+  }, [usuario, safeAvisar]);
 
   const copiarSenha = (senha) => {
     navigator.clipboard.writeText(senha);
-    avisar("SENHA COPIADA!", "sucesso");
+    safeAvisar("SENHA COPIADA!", "sucesso");
   };
 
   // 2. Função para Adicionar Membro
   const adicionarMembro = async (e) => {
     e.preventDefault();
+    if (salvando) return;
     setSalvando(true);
 
     try {
-      const meuIdMestre = usuario?.empresaId || usuario?.uid;
+      const idMestre = usuario?.empresaId || usuario?.uid;
       const emailId = novoMembro.email.toLowerCase().trim();
 
+      // Verificar existência
       const docExistente = await getDoc(doc(db, "usuarios", emailId));
       if (docExistente.exists()) {
-        avisar("ESTE E-MAIL JÁ ESTÁ EM USO.", "erro");
+        safeAvisar("ESTE E-MAIL JÁ ESTÁ EM USO.", "erro");
         setSalvando(false);
         return;
       }
 
-      // Busca o limite no documento do dono para validar
-      const donoRef = doc(db, "usuarios", meuIdMestre);
+      // Validar limite de usuários no plano
+      const donoRef = doc(db, "usuarios", idMestre);
       const donoSnap = await getDoc(donoRef);
-      const dadosDono = donoSnap.data();
+      const limite = donoSnap.data()?.maxUsers || 1;
 
-      const limiteMaximo = dadosDono?.maxUsers || 1;
-      if (membros.length >= limiteMaximo) {
-        avisar(`LIMITE ATINGIDO: Máximo ${limiteMaximo} funcionários.`, "erro");
+      if (membros.length >= limite) {
+        safeAvisar(`LIMITE ATINGIDO: Máximo ${limite} funcionários.`, "erro");
         setSalvando(false);
         return;
       }
@@ -100,10 +110,9 @@ const Equipa = ({ usuario, avisar }) => {
         telemovel: novoMembro.telemovel || '',
         password: novoMembro.password || idFunc,
         role: novoMembro.role || 'caixa',
-        // Salvamos ambos para garantir que a função 'pertenceALoja' das regras valide corretamente
-        empresaId: meuIdMestre, 
-        lojaId: meuIdMestre,
-        nomeLoja: usuario.nomeLoja || dadosDono?.nomeLoja || 'Minha Loja',
+        empresaId: idMestre, 
+        lojaId: idMestre,
+        nomeLoja: usuario.nomeLoja || donoSnap.data()?.nomeLoja || 'Minha Loja',
         status: 'ativo',
         adicionadoPor: usuario.nome || 'Admin',
         createdAt: new Date().toISOString()
@@ -113,11 +122,11 @@ const Equipa = ({ usuario, avisar }) => {
       
       setMostrarModal(false);
       setNovoMembro({ nome: '', email: '', telemovel: '', password: '', role: 'caixa' });
-      avisar("ACESSO CRIADO!", "sucesso");
+      safeAvisar("ACESSO CRIADO COM SUCESSO!", "sucesso");
 
     } catch (error) {
-      console.error("Erro ao criar:", error);
-      avisar("ERRO DE PERMISSÃO AO SALVAR", "erro");
+      console.error("Erro ao criar membro:", error);
+      safeAvisar("ERRO DE PERMISSÃO OU REDE", "erro");
     } finally {
       setSalvando(false);
     }
@@ -127,15 +136,14 @@ const Equipa = ({ usuario, avisar }) => {
     if (window.confirm(`Tens a certeza que queres revogar o acesso de ${nome}?`)) {
       try {
         await deleteDoc(doc(db, "usuarios", id));
-        avisar("ACESSO ELIMINADO", "sucesso");
+        safeAvisar("ACESSO ELIMINADO", "sucesso");
       } catch (error) {
-        avisar("ERRO AO REMOVER", "erro");
+        safeAvisar("ERRO AO REMOVER", "erro");
       }
     }
   };
 
   return (
-    // ... O seu JSX de retorno permanece exatamente o mesmo ...
     <div className="space-y-8 animate-fade-in pb-10">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
