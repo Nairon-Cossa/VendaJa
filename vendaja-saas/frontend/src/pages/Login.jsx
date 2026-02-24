@@ -26,43 +26,14 @@ const Login = ({ aoLogar }) => {
 
     try {
       /* ============================================================
-         1. FLUXO DE FUNCIONÁRIO (Busca Direta por ID/Email)
-         Como o ID do documento agora é o próprio email, usamos getDoc.
-      ============================================================ */
-      const docRef = doc(db, "usuarios", emailLimpo);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        const dadosUsuario = docSnap.data();
-
-        // Verifica se a senha manual (campo password no Firestore) coincide
-        if (dadosUsuario.password === password) {
-          if (dadosUsuario.status === 'suspenso') {
-            setErro("ACESSO SUSPENSO PELO ADMINISTRADOR.");
-            setCarregando(false);
-            return;
-          }
-
-          // Login de funcionário bem-sucedido
-          // UPDATE: Persistência manual para funcionários
-          const sessaoFuncionario = { uid: docSnap.id, ...dadosUsuario };
-          localStorage.setItem('vendaJa_sessao', JSON.stringify(sessaoFuncionario));
-          
-          aoLogar(sessaoFuncionario);
-          navigate('/');
-          return;
-        }
-      }
-
-      /* ============================================================
-         2. TENTATIVA AUTH FIREBASE (Para Donos / Master Admin)
-         Se não logou como funcionário, tenta a autenticação oficial.
+         1. TENTATIVA AUTH FIREBASE (Donos / Master Admin)
+         Prioridade para quem tem conta oficial no Firebase Auth.
       ============================================================ */
       try {
         const userCredential = await signInWithEmailAndPassword(auth, emailLimpo, password);
         const user = userCredential.user;
 
-        // BYPASS SUPER ADMIN
+        // BYPASS SUPER ADMIN (Teu email de desenvolvedor)
         if (user.email?.toLowerCase() === "naironcossa.dev@gmail.com") {
           const sessaoMaster = {
             uid: user.uid,
@@ -78,29 +49,59 @@ const Login = ({ aoLogar }) => {
           return;
         }
 
-        // Buscar dados do Dono no Firestore usando o UID do Firebase Auth
+        // Se logou no Auth, buscamos os dados no Firestore usando o UID (ID real do Dono)
         const donoSnap = await getDoc(doc(db, "usuarios", user.uid));
+        
         if (donoSnap.exists()) {
           const dados = donoSnap.data();
           if (dados.status === 'suspenso') {
             setErro("CONTA SUSPENSA. CONTACTE O SUPORTE.");
+            setCarregando(false);
             return;
           }
 
-          // UPDATE: Persistência para donos/admin
           const sessaoDono = { uid: user.uid, ...dados };
           localStorage.setItem('vendaJa_sessao', JSON.stringify(sessaoDono));
           
           aoLogar(sessaoDono);
           navigate('/');
-        } else {
-          setErro("PERFIL NÃO LOCALIZADO NO SISTEMA.");
-        }
-
+          return;
+        } 
       } catch (authErr) {
-        console.error("Auth Error Code:", authErr.code);
-        setErro("CREDENCIAIS INVÁLIDAS");
+        // Se der erro aqui, pode ser que seja um funcionário (que não tem conta no Auth)
+        // Então deixamos o código continuar para o passo 2.
+        console.log("Auth oficial falhou, tentando login manual de funcionário...");
       }
+
+      /* ============================================================
+         2. FLUXO DE FUNCIONÁRIO (Busca por Documento ID = Email)
+         Se não logou via Auth, procuramos o documento cujo ID é o email.
+      ============================================================ */
+      const docRef = doc(db, "usuarios", emailLimpo);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const dadosUsuario = docSnap.data();
+
+        // Validação da senha manual do Firestore
+        if (dadosUsuario.password === password) {
+          if (dadosUsuario.status === 'suspenso') {
+            setErro("ACESSO SUSPENSO PELO ADMINISTRADOR.");
+            setCarregando(false);
+            return;
+          }
+
+          const sessaoFuncionario = { uid: docSnap.id, ...dadosUsuario };
+          localStorage.setItem('vendaJa_sessao', JSON.stringify(sessaoFuncionario));
+          
+          aoLogar(sessaoFuncionario);
+          navigate('/');
+          return;
+        }
+      }
+
+      // Se passou pelos dois fluxos e não retornou, as credenciais são inválidas
+      setErro("E-MAIL OU CHAVE DE ACESSO INCORRETOS.");
 
     } catch (err) {
       console.error("Erro Geral de Login:", err);
@@ -138,7 +139,7 @@ const Login = ({ aoLogar }) => {
         {/* FORMULÁRIO */}
         <div className="px-10 pb-12 bg-white">
           {erro && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-[10px] font-black uppercase mb-6 flex items-center gap-3 border border-red-100 animate-shake">
+            <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-[10px] font-black uppercase mb-6 flex items-center gap-3 border border-red-100">
               <AlertCircle size={18} />
               {erro}
             </div>
