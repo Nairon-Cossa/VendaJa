@@ -112,32 +112,32 @@ const Registo = () => {
       // NOVO FLUXO DE MULTI-TENANCY: Usamos o UID do dono como ID da Empresa
       const empresaId = user.uid;
 
-    // 1. Criar o documento central da EMPRESA (usando lojaId)
-await setDoc(doc(db, "empresas", user.uid), {
-  lojaId: user.uid, // Alterado de empresaId para lojaId
-  nome: dados.nomeLoja,
-  tipoNegocio: dados.tipoNegocio,
-  logoUrl: urlFinalLogo,
-  moeda: 'MT',
-  telefone: dados.telemovel,
-  emailResponsavel: dados.email,
-  status: 'pendente',
-  donoUid: user.uid,
-  configurado: true,
-  criadoEm: serverTimestamp()
-});
+      // 1. Criar o documento central da EMPRESA
+      await setDoc(doc(db, "empresas", empresaId), {
+        empresaId: empresaId,
+        nome: dados.nomeLoja,
+        tipoNegocio: dados.tipoNegocio,
+        logoUrl: urlFinalLogo,
+        moeda: 'MT',
+        telefone: dados.telemovel,
+        emailResponsavel: dados.email,
+        status: 'pendente',
+        donoUid: user.uid,
+        configurado: true,
+        criadoEm: serverTimestamp()
+      });
 
-// 2. Criar o documento do USUÁRIO (usando lojaId)
-await setDoc(doc(db, "usuarios", user.uid), {
-  uid: user.uid,
-  lojaId: user.uid, // Alterado de empresaId para lojaId
-  nome: dados.nome,
-  email: dados.email,
-  telemovel: dados.telemovel,
-  role: 'admin',
-  status: 'pendente', 
-  criadoEm: serverTimestamp()
-});
+      // 2. Criar o documento do USUÁRIO associando-o ao empresaId
+      await setDoc(doc(db, "usuarios", user.uid), {
+        uid: user.uid,
+        empresaId: empresaId, // <- A chave que vai isolar os dados!
+        nome: dados.nome,
+        email: dados.email,
+        telemovel: dados.telemovel,
+        role: 'admin',
+        status: 'pendente', 
+        criadoEm: serverTimestamp()
+      });
 
       // Deslogar imediatamente para que o App.js não tente entrar na Dashboard
       await signOut(auth);
