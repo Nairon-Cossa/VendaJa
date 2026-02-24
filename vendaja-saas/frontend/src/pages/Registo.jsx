@@ -128,18 +128,18 @@ const Registo = () => {
       });
 
       // 2. Criar o documento do USUÁRIO associando-o ao empresaId
+      // IMPORTANTE: O ID deste documento deve ser o user.uid para o login funcionar!
       await setDoc(doc(db, "usuarios", user.uid), {
         uid: user.uid,
-        empresaId: empresaId, // <- A chave que vai isolar os dados!
+        empresaId: empresaId,
         nome: dados.nome,
-        email: dados.email,
+        email: dados.email.toLowerCase().trim(),
         telemovel: dados.telemovel,
         role: 'admin',
         status: 'pendente', 
         criadoEm: serverTimestamp()
       });
 
-      // Deslogar imediatamente para que o App.js não tente entrar na Dashboard
       await signOut(auth);
       setSucessoVerificacao(true);
       
@@ -151,7 +151,6 @@ const Registo = () => {
     }
   };
 
-  // TELA DE AGUARDANDO ATIVAÇÃO (WHATSAPP)
   if (sucessoVerificacao) {
     const msgWhatsapp = encodeURIComponent(`Olá Nairon! Fiz o registo da minha loja "${dados.nomeLoja}" e gostaria de enviar o comprovativo para ativação. (Email: ${dados.email})`);
     
@@ -201,7 +200,6 @@ const Registo = () => {
     <div className="min-h-screen bg-[#F1F5F9] flex items-center justify-center p-6 font-sans">
       <div className="bg-white w-full max-w-5xl rounded-[4rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col md:flex-row min-h-[750px] animate-in fade-in duration-700">
         
-        {/* SIDEBAR INFORMATIVA */}
         <div className="bg-slate-900 md:w-96 p-14 text-white flex flex-col justify-between relative overflow-hidden">
           <div className="absolute -top-20 -right-20 w-64 h-64 bg-blue-600/20 blur-[100px] rounded-full" />
           
@@ -231,7 +229,6 @@ const Registo = () => {
           </div>
         </div>
 
-        {/* ÁREA DO FORMULÁRIO */}
         <div className="flex-1 p-10 md:p-20 flex flex-col justify-center relative bg-white">
           {erro && (
             <div className="absolute top-10 left-10 right-10 p-4 bg-red-50 text-red-600 rounded-2xl flex items-center gap-3 border border-red-100 animate-in slide-in-from-top-4 z-20">

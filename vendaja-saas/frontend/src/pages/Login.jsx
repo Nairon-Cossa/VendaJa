@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import {
   Store, Mail, ArrowRight, ShieldCheck, Loader2,
@@ -27,7 +27,7 @@ const Login = ({ aoLogar }) => {
     try {
       /* ============================================================
          1. TENTATIVA AUTH FIREBASE (Donos / Master Admin)
-         Prioridade para quem tem conta oficial no Firebase Auth.
+         Utiliza o UID para buscar o documento do usuário.
       ============================================================ */
       try {
         const userCredential = await signInWithEmailAndPassword(auth, emailLimpo, password);
@@ -49,13 +49,15 @@ const Login = ({ aoLogar }) => {
           return;
         }
 
-        // Se logou no Auth, buscamos os dados no Firestore usando o UID (ID real do Dono)
+        // BUSCA PELO UID (Como definido no teu Registo.jsx)
         const donoSnap = await getDoc(doc(db, "usuarios", user.uid));
         
         if (donoSnap.exists()) {
           const dados = donoSnap.data();
+          
           if (dados.status === 'suspenso') {
             setErro("CONTA SUSPENSA. CONTACTE O SUPORTE.");
+            await signOut(auth); // Desloga para não manter sessão fantasma
             setCarregando(false);
             return;
           }
@@ -68,14 +70,19 @@ const Login = ({ aoLogar }) => {
           return;
         } 
       } catch (authErr) {
-        // Se der erro aqui, pode ser que seja um funcionário (que não tem conta no Auth)
-        // Então deixamos o código continuar para o passo 2.
-        console.log("Auth oficial falhou, tentando login manual de funcionário...");
+        // Se a senha estiver errada para um email que existe no Auth, paramos aqui
+        if (authErr.code === 'auth/wrong-password') {
+           setErro("CHAVE DE ACESSO INCORRETA.");
+           setCarregando(false);
+           return;
+        }
+        // Se o erro for 'user-not-found', o código continua para tentar o fluxo de funcionário
+        console.log("Conta Auth não encontrada ou erro, tentando base manual de funcionários...");
       }
 
       /* ============================================================
          2. FLUXO DE FUNCIONÁRIO (Busca por Documento ID = Email)
-         Se não logou via Auth, procuramos o documento cujo ID é o email.
+         Para quem não tem conta no Auth mas existe no Firestore.
       ============================================================ */
       const docRef = doc(db, "usuarios", emailLimpo);
       const docSnap = await getDoc(docRef);
@@ -83,7 +90,6 @@ const Login = ({ aoLogar }) => {
       if (docSnap.exists()) {
         const dadosUsuario = docSnap.data();
 
-        // Validação da senha manual do Firestore
         if (dadosUsuario.password === password) {
           if (dadosUsuario.status === 'suspenso') {
             setErro("ACESSO SUSPENSO PELO ADMINISTRADOR.");
@@ -100,16 +106,11 @@ const Login = ({ aoLogar }) => {
         }
       }
 
-      // Se passou pelos dois fluxos e não retornou, as credenciais são inválidas
       setErro("E-MAIL OU CHAVE DE ACESSO INCORRETOS.");
 
     } catch (err) {
       console.error("Erro Geral de Login:", err);
-      if (err.message.includes("permission-denied")) {
-        setErro("ERRO DE PERMISSÃO: CONTACTE O ADMINISTRADOR.");
-      } else {
-        setErro("FALHA NA AUTENTICAÇÃO. TENTE NOVAMENTE.");
-      }
+      setErro("FALHA NA AUTENTICAÇÃO. TENTE NOVAMENTE.");
     } finally {
       setCarregando(false);
     }
