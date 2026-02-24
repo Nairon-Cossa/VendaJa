@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { 
-  getFirestore, 
-  enableIndexedDbPersistence, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
   doc, 
   updateDoc, 
   getDoc, 
@@ -23,32 +24,22 @@ const firebaseConfig = {
   measurementId: "G-4B7NV0J1RZ"
 };
 
-// Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 
-// Inicializar serviços
-export const db = getFirestore(app);
+// NOVA FORMA DE INICIALIZAR (Sem o aviso de depreciação)
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+});
+
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
 // ==========================================
-// ATIVAR O MODO SUPER OFFLINE DO FIREBASE
-// ==========================================
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code == 'failed-precondition') {
-    console.warn('Múltiplas abas abertas. O modo offline só funciona na primeira aba.');
-  } else if (err.code == 'unimplemented') {
-    console.warn('O seu navegador não suporta armazenamento offline.');
-  }
-});
-
-// ==========================================
-// FUNÇÕES AUXILIARES DE GESTÃO DE PLANOS
+// FUNÇÕES AUXILIARES
 // ==========================================
 
-/**
- * Atualiza o plano e o limite de usuários de uma loja.
- */
 export const atualizarPlanoLoja = async (uid, planoNome, maxUsers) => {
   try {
     const userRef = doc(db, "usuarios", uid);
@@ -63,31 +54,23 @@ export const atualizarPlanoLoja = async (uid, planoNome, maxUsers) => {
   }
 };
 
-/**
- * Conta quantos usuários uma loja possui atualmente.
- */
 export const contarUsuariosLoja = async (lojaId) => {
   try {
     const q = query(collection(db, "usuarios"), where("lojaId", "==", lojaId));
     const snapshot = await getDocs(q);
-    return snapshot.size; // Retorna o número total de documentos encontrados
+    return snapshot.size;
   } catch (error) {
     console.error("Erro ao contar usuários:", error);
     return 0;
   }
 };
 
-/**
- * Verifica se a loja ainda pode adicionar novos usuários baseando-se no plano.
- */
 export const verificarDisponibilidadePlano = async (lojaId) => {
   try {
     const lojaDoc = await getDoc(doc(db, "usuarios", lojaId));
     if (!lojaDoc.exists()) return false;
-
     const { maxUsers } = lojaDoc.data();
     const totalAtual = await contarUsuariosLoja(lojaId);
-
     return {
       podeAdicionar: totalAtual < (maxUsers || 1),
       atual: totalAtual,
