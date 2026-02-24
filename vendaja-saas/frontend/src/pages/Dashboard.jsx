@@ -46,11 +46,14 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
   }, []);
 
   useEffect(() => {
-    if (!usuario?.uid) return;
+    // CORREÇÃO: Usa o lojaId se existir, senão usa o uid (para compatibilidade)
+    const idBusca = usuario?.lojaId || usuario?.uid;
+    
+    if (!idBusca) return;
 
     const q = query(
       collection(db, 'vendas'),
-      where('lojaId', '==', usuario.uid),
+      where('lojaId', '==', idBusca),
       orderBy('data', 'desc')
     );
 
@@ -74,13 +77,14 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
     );
 
     return () => unsubscribe();
-  }, [usuario?.uid, avisar]);
+  }, [usuario?.uid, usuario?.lojaId, avisar]);
 
   /* ===============================
       LÓGICA DE PERFORMANCE AVANÇADA
   =============================== */
   const estatisticas = useMemo(() => {
     const hojeStr = new Date().toLocaleDateString();
+    const idLoja = usuario?.lojaId || usuario?.uid;
 
     const totalHistorico = vendas.reduce((acc, v) => acc + Number(v.total || 0), 0);
 
@@ -110,7 +114,8 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       });
     });
 
-    const meusProdutos = produtos.filter(p => p.lojaId === usuario?.uid);
+    // CORREÇÃO: Filtra produtos pelo lojaId da mesma forma que as vendas
+    const meusProdutos = produtos.filter(p => p.lojaId === idLoja);
     const produtosCriticos = meusProdutos.filter(p => Number(p.stock ?? 0) <= 5);
 
     // KPI de Saúde
@@ -130,7 +135,7 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       saude: Math.max(saude, 5),
       margemMedia: totalHistorico > 0 ? (lucroTotal / totalHistorico) * 100 : 0
     };
-  }, [vendas, produtos, isOnline, usuario?.uid]);
+  }, [vendas, produtos, isOnline, usuario?.uid, usuario?.lojaId]);
 
   if (carregando && usuario?.uid && vendas.length === 0) {
     return (
