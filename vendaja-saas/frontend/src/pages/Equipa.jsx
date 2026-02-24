@@ -20,33 +20,41 @@ const Equipa = ({ usuario, avisar }) => {
     role: 'caixa'
   });
 
-  // 1. Carregar membros ligados a esta loja
+  // 1. Carregar membros ligados a esta empresa
   useEffect(() => {
-    const targetLojaId = usuario?.lojaId || usuario?.uid;
-    if (!targetLojaId) return;
+    // IMPORTANTE: idEmpresa identifica o dono do negócio
+    const idEmpresa = usuario?.empresaId || usuario?.uid;
+    if (!idEmpresa) return;
 
+    // Atualizamos a query para "empresaId" para bater com as novas Security Rules
     const q = query(
       collection(db, "usuarios"),
-      where("lojaId", "==", targetLojaId)
+      where("empresaId", "==", idEmpresa)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const lista = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      // Filtra para não mostrar o próprio usuário logado nem o superadmin
-      setMembros(lista.filter(m => m.email !== usuario.email));
-      setCarregando(false);
-    }, (error) => {
-      console.error(error);
-      avisar("ERRO AO CARREGAR EQUIPA", "erro");
+    // Usamos a sintaxe de objeto {next, error} para evitar o erro "e is not a function"
+    const unsubscribe = onSnapshot(q, {
+      next: (snapshot) => {
+        const lista = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        // Filtra para não mostrar o próprio usuário logado
+        setMembros(lista.filter(m => m.email !== usuario.email));
+        setCarregando(false);
+      },
+      error: (error) => {
+        console.error("Erro no listener da Equipa:", error);
+        setCarregando(false);
+        if (error.code === 'permission-denied') {
+          avisar("SEM PERMISSÃO PARA LISTAR EQUIPA", "erro");
+        }
+      }
     });
 
     return () => unsubscribe();
   }, [usuario, avisar]);
 
-  // Função utilitária para copiar senha
   const copiarSenha = (senha) => {
     navigator.clipboard.writeText(senha);
     avisar("SENHA COPIADA!", "sucesso");
@@ -58,7 +66,7 @@ const Equipa = ({ usuario, avisar }) => {
     setSalvando(true);
 
     try {
-      const meuLojaId = usuario?.lojaId || usuario?.uid;
+      const idEmpresa = usuario?.empresaId || usuario?.uid;
       const emailId = novoMembro.email.toLowerCase().trim();
 
       // Verificar se este email já existe
@@ -69,15 +77,12 @@ const Equipa = ({ usuario, avisar }) => {
         return;
       }
 
-      // BUSCA O LIMITE NO DOCUMENTO DO DONO (meuLojaId)
-      const donoRef = doc(db, "usuarios", meuLojaId);
+      // BUSCA O LIMITE NO DOCUMENTO DO DONO
+      const donoRef = doc(db, "usuarios", idEmpresa);
       const donoSnap = await getDoc(donoRef);
       const dadosDono = donoSnap.data();
 
-      // Se não houver maxUsers definido, assume 1 como segurança
       const limiteMaximo = dadosDono?.maxUsers || 1;
-      // Contamos todos os membros (incluindo o dono no contador se necessário, ou apenas funcionários)
-      // Aqui vamos contar apenas funcionários ativos na lista
       const totalFuncionarios = membros.length;
 
       if (totalFuncionarios >= limiteMaximo) {
@@ -95,7 +100,8 @@ const Equipa = ({ usuario, avisar }) => {
         telemovel: novoMembro.telemovel || '',
         password: novoMembro.password || idFunc,
         role: novoMembro.role || 'caixa',
-        lojaId: meuLojaId,
+        empresaId: idEmpresa, // CAMPO PRINCIPAL DE HIERARQUIA
+        lojaId: idEmpresa,    // Mantido para compatibilidade legado
         nomeLoja: usuario.nomeLoja || dadosDono?.nomeLoja || 'Minha Loja',
         status: 'ativo',
         adicionadoPor: usuario.nome || 'Admin',
@@ -110,7 +116,7 @@ const Equipa = ({ usuario, avisar }) => {
 
     } catch (error) {
       console.error("Erro ao criar acesso:", error);
-      avisar("FALHA AO SALVAR NO BANCO DE DADOS", "erro");
+      avisar("FALHA AO SALVAR: VERIFIQUE AS PERMISSÕES", "erro");
     } finally {
       setSalvando(false);
     }
