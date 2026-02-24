@@ -20,19 +20,21 @@ const Equipa = ({ usuario, avisar }) => {
     role: 'caixa'
   });
 
-  // 1. Carregar membros ligados a esta empresa
+  // 1. Carregar membros ligados a esta empresa/loja
   useEffect(() => {
-    // IMPORTANTE: idEmpresa identifica o dono do negócio
-    const idEmpresa = usuario?.empresaId || usuario?.uid;
-    if (!idEmpresa) return;
+    // Para bater com as regras: Se sou funcionário, uso meu empresaId. Se sou dono, uso meu uid.
+    const idParaFiltro = usuario?.empresaId || usuario?.uid;
+    
+    if (!idParaFiltro) return;
 
-    // Atualizamos a query para "empresaId" para bater com as novas Security Rules
+    // A regra 'allow list' espera explicitamente o filtro lojaId ou empresaId
+    // Vamos usar empresaId como padrão para centralizar
     const q = query(
       collection(db, "usuarios"),
-      where("empresaId", "==", idEmpresa)
+      where("empresaId", "==", idParaFiltro)
     );
 
-    // Usamos a sintaxe de objeto {next, error} para evitar o erro "e is not a function"
+    // Corrigindo o erro "e is not a function" usando a sintaxe de objeto
     const unsubscribe = onSnapshot(q, {
       next: (snapshot) => {
         const lista = snapshot.docs.map(doc => ({
@@ -44,10 +46,11 @@ const Equipa = ({ usuario, avisar }) => {
         setCarregando(false);
       },
       error: (error) => {
-        console.error("Erro no listener da Equipa:", error);
+        console.error("Erro Firestore Equipa:", error);
         setCarregando(false);
+        // Tratamento silencioso para não travar a UI, apenas avisa
         if (error.code === 'permission-denied') {
-          avisar("SEM PERMISSÃO PARA LISTAR EQUIPA", "erro");
+          avisar("ACESSO NEGADO: VERIFIQUE SEU PERFIL", "erro");
         }
       }
     });
@@ -66,10 +69,9 @@ const Equipa = ({ usuario, avisar }) => {
     setSalvando(true);
 
     try {
-      const idEmpresa = usuario?.empresaId || usuario?.uid;
+      const meuIdMestre = usuario?.empresaId || usuario?.uid;
       const emailId = novoMembro.email.toLowerCase().trim();
 
-      // Verificar se este email já existe
       const docExistente = await getDoc(doc(db, "usuarios", emailId));
       if (docExistente.exists()) {
         avisar("ESTE E-MAIL JÁ ESTÁ EM USO.", "erro");
@@ -77,16 +79,14 @@ const Equipa = ({ usuario, avisar }) => {
         return;
       }
 
-      // BUSCA O LIMITE NO DOCUMENTO DO DONO
-      const donoRef = doc(db, "usuarios", idEmpresa);
+      // Busca o limite no documento do dono para validar
+      const donoRef = doc(db, "usuarios", meuIdMestre);
       const donoSnap = await getDoc(donoRef);
       const dadosDono = donoSnap.data();
 
       const limiteMaximo = dadosDono?.maxUsers || 1;
-      const totalFuncionarios = membros.length;
-
-      if (totalFuncionarios >= limiteMaximo) {
-        avisar(`LIMITE ATINGIDO: O teu plano permite ${limiteMaximo} funcionário(s).`, "erro");
+      if (membros.length >= limiteMaximo) {
+        avisar(`LIMITE ATINGIDO: Máximo ${limiteMaximo} funcionários.`, "erro");
         setSalvando(false);
         return;
       }
@@ -100,8 +100,9 @@ const Equipa = ({ usuario, avisar }) => {
         telemovel: novoMembro.telemovel || '',
         password: novoMembro.password || idFunc,
         role: novoMembro.role || 'caixa',
-        empresaId: idEmpresa, // CAMPO PRINCIPAL DE HIERARQUIA
-        lojaId: idEmpresa,    // Mantido para compatibilidade legado
+        // Salvamos ambos para garantir que a função 'pertenceALoja' das regras valide corretamente
+        empresaId: meuIdMestre, 
+        lojaId: meuIdMestre,
         nomeLoja: usuario.nomeLoja || dadosDono?.nomeLoja || 'Minha Loja',
         status: 'ativo',
         adicionadoPor: usuario.nome || 'Admin',
@@ -112,11 +113,11 @@ const Equipa = ({ usuario, avisar }) => {
       
       setMostrarModal(false);
       setNovoMembro({ nome: '', email: '', telemovel: '', password: '', role: 'caixa' });
-      avisar("ACESSO CRIADO COM SUCESSO!", "sucesso");
+      avisar("ACESSO CRIADO!", "sucesso");
 
     } catch (error) {
-      console.error("Erro ao criar acesso:", error);
-      avisar("FALHA AO SALVAR: VERIFIQUE AS PERMISSÕES", "erro");
+      console.error("Erro ao criar:", error);
+      avisar("ERRO DE PERMISSÃO AO SALVAR", "erro");
     } finally {
       setSalvando(false);
     }
@@ -134,8 +135,8 @@ const Equipa = ({ usuario, avisar }) => {
   };
 
   return (
+    // ... O seu JSX de retorno permanece exatamente o mesmo ...
     <div className="space-y-8 animate-fade-in pb-10">
-      
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 italic uppercase tracking-tighter">Gestão de Equipa</h2>
@@ -210,7 +211,6 @@ const Equipa = ({ usuario, avisar }) => {
         )}
       </div>
 
-      {/* MODAL ADICIONAR */}
       {mostrarModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden">
