@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import {
   Store, Mail, ArrowRight, ShieldCheck, Loader2,
   Lock, Eye, EyeOff, AlertCircle
@@ -22,68 +22,79 @@ const Login = ({ aoLogar }) => {
     setCarregando(true);
     setErro('');
 
+    const emailLimpo = email.trim().toLowerCase();
+
     try {
       /* ===============================
-         1. AUTH FIREBASE
+         1. TENTATIVA AUTH FIREBASE (Para Donos/Master)
       =============================== */
-      const userCredential = await signInWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, emailLimpo, password);
+        const user = userCredential.user;
+
+        // SUPER ADMIN BYPASS
+        if (user.email?.toLowerCase() === "naironcossa.dev@gmail.com") {
+          aoLogar({
+            uid: user.uid,
+            email: user.email,
+            role: 'superadmin',
+            nome: 'Master Admin',
+            status: 'ativo'
+          });
+          navigate('/gestao-mestra');
+          return;
+        }
+
+        const docSnap = await getDoc(doc(db, "usuarios", user.uid));
+        if (docSnap.exists()) {
+          const dados = docSnap.data();
+          if (dados.status === 'suspenso') {
+            setErro("CONTA SUSPENSA. CONTACTE O SUPORTE.");
+            return;
+          }
+          aoLogar({ uid: user.uid, ...dados });
+          navigate('/');
+          return;
+        }
+      } catch (authErr) {
+        // Se o erro não for senha errada, mas sim usuário não encontrado, 
+        // prosseguimos para verificar se é um funcionário (Custom Login)
+        if (authErr.code !== 'auth/user-not-found' && authErr.code !== 'auth/invalid-credential') {
+            throw authErr; 
+        }
+      }
+
+      /* ===============================
+         2. FLUXO DE FUNCIONÁRIO (Custom Login)
+         Procura na coleção usuários por e-mail + password manual
+      =============================== */
+      const q = query(
+        collection(db, "usuarios"), 
+        where("email", "==", emailLimpo),
+        where("password", "==", password) // A senha que definimos no Equipa.jsx
       );
 
-      const user = userCredential.user;
+      const querySnapshot = await getDocs(q);
 
-      /* ===============================
-         SUPER ADMIN BYPASS
-      =============================== */
-      if (user.email?.toLowerCase() === "naironcossa.dev@gmail.com") {
-        aoLogar({
-          uid: user.uid,
-          email: user.email,
-          role: 'superadmin',
-          nome: 'Master Admin',
-          status: 'ativo'
-        });
-        navigate('/gestao-mestra');
-        return;
+      if (!querySnapshot.empty) {
+        const docUser = querySnapshot.docs[0];
+        const dadosUsuario = docUser.data();
+
+        if (dadosUsuario.status === 'suspenso') {
+          setErro("ACESSO SUSPENSO PELO ADMINISTRADOR.");
+          return;
+        }
+
+        aoLogar({ uid: docUser.id, ...dadosUsuario });
+        navigate('/');
+      } else {
+        setErro("CREDENCIAIS INVÁLIDAS");
       }
-
-      /* ===============================
-         FLUXO NORMAL
-      =============================== */
-      const docSnap = await getDoc(doc(db, "usuarios", user.uid));
-
-      if (!docSnap.exists()) {
-        setErro("PERFIL NÃO LOCALIZADO NO SISTEMA.");
-        return;
-      }
-
-      const dadosUsuario = docSnap.data();
-
-      if (dadosUsuario.status === 'suspenso') {
-        setErro("CONTA SUSPENSA. CONTACTE O SUPORTE.");
-        return;
-      }
-
-      aoLogar({ uid: user.uid, ...dadosUsuario });
-      navigate('/');
 
     } catch (err) {
       console.error("Login Error:", err.code);
-
-      /* ===============================
-         ERROR HANDLING (FIX)
-      =============================== */
-      if (
-        err.code === 'auth/invalid-credential' ||
-        err.code === 'auth/wrong-password' ||
-        err.code === 'auth/user-not-found'
-      ) {
-        setErro("CREDENCIAIS INVÁLIDAS");
-      } else if (err.code === 'auth/user-disabled') {
-        setErro("CONTA DESATIVADA NO SERVIDOR MASTER.");
-      } else if (err.code === 'auth/network-request-failed') {
+      
+      if (err.code === 'auth/network-request-failed') {
         setErro("ERRO DE LIGAÇÃO. VERIFIQUE A INTERNET.");
       } else {
         setErro("FALHA NA AUTENTICAÇÃO.");
@@ -137,7 +148,7 @@ const Login = ({ aoLogar }) => {
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  className="w-full bg-slate-50 p-5 pl-16 rounded-[2rem] font-bold"
+                  className="w-full bg-slate-50 p-5 pl-16 rounded-[2rem] font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all"
                   placeholder="exemplo@venda.com"
                 />
               </div>
@@ -161,7 +172,7 @@ const Login = ({ aoLogar }) => {
                   type={verSenha ? "text" : "password"}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-slate-50 p-5 pl-16 pr-16 rounded-[2rem] font-bold"
+                  className="w-full bg-slate-50 p-5 pl-16 pr-16 rounded-[2rem] font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all"
                   placeholder="••••••••"
                 />
                 <button
@@ -177,7 +188,7 @@ const Login = ({ aoLogar }) => {
             {/* BUTTON */}
             <button
               disabled={carregando}
-              className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black flex justify-center gap-3 disabled:opacity-50"
+              className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black flex justify-center gap-3 disabled:opacity-50 hover:bg-blue-600 transition-all active:scale-95"
             >
               {carregando ? (
                 <Loader2 className="animate-spin" size={20} />
@@ -191,8 +202,8 @@ const Login = ({ aoLogar }) => {
               )}
             </button>
 
-            <div className="text-center pt-8 border-t">
-              <Link to="/registo" className="text-blue-600 font-black text-xs uppercase">
+            <div className="text-center pt-8 border-t border-slate-50">
+              <Link to="/registo" className="text-blue-600 font-black text-xs uppercase hover:underline">
                 Criar Conta de Loja
               </Link>
             </div>

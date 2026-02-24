@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { 
   Users, UserPlus, Trash2, Shield, 
-  UserCircle, Mail, Phone, Loader2, X, AlertCircle
+  UserCircle, Mail, Phone, Loader2, X, AlertCircle, Lock
 } from 'lucide-react';
 
 const Equipa = ({ usuario, avisar }) => {
@@ -16,12 +16,12 @@ const Equipa = ({ usuario, avisar }) => {
     nome: '',
     email: '',
     telemovel: '',
+    password: '', // Campo para senha manual
     role: 'caixa'
   });
 
   // 1. Carregar membros ligados a esta loja
   useEffect(() => {
-    // Usamos o lojaId para garantir que o dono veja todos da sua unidade
     const targetLojaId = usuario?.lojaId || usuario?.uid;
     if (!targetLojaId) return;
 
@@ -35,7 +35,6 @@ const Equipa = ({ usuario, avisar }) => {
         id: doc.id,
         ...doc.data()
       }));
-      // Filtramos para não mostrar o próprio dono (quem está logado) na lista de baixo
       setMembros(lista.filter(m => m.uid !== usuario.uid));
       setCarregando(false);
     }, (error) => {
@@ -46,44 +45,38 @@ const Equipa = ({ usuario, avisar }) => {
     return () => unsubscribe();
   }, [usuario, avisar]);
 
-  // 2. Função para Adicionar Membro (AJUSTADA PARA EVITAR UNDEFINED)
+  // 2. Função para Adicionar Membro
   const adicionarMembro = async (e) => {
     e.preventDefault();
     setSalvando(true);
 
     try {
-      // O ID da loja é o UID do dono original
       const meuLojaId = usuario?.lojaId || usuario?.uid;
 
-      // 1. Verificar o documento do DONO para ver o limite real
       const lojaRef = doc(db, "usuarios", meuLojaId);
       const lojaSnap = await getDoc(lojaRef);
       const dadosLoja = lojaSnap.data();
 
-      // 2. Definir o limite (Assume 1 se não existir no banco)
       const limiteMaximo = dadosLoja?.maxUsers || 1;
-      
-      // 3. Contar: Membros atuais + 1 (que é o Dono)
       const totalNoSistema = membros.length + 1;
 
       if (totalNoSistema >= limiteMaximo) {
-        avisar(`BLOQUEADO: O teu limite é de ${limiteMaximo} utilizador(es). Faz upgrade para adicionar mais.`, "erro");
+        avisar(`BLOQUEADO: O teu limite é de ${limiteMaximo} utilizador(es).`, "erro");
         setSalvando(false);
         return;
       }
 
-      // Se passou o bloqueio, gera o acesso
       const idGerado = `FUNC_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       
-      // CORREÇÃO: Garantir que nenhum campo seja undefined
       const dadosFuncionario = {
         uid: idGerado,
         nome: novoMembro.nome || '',
         email: novoMembro.email.toLowerCase().trim() || '',
         telemovel: novoMembro.telemovel || '',
+        password: novoMembro.password || idGerado, // Senha manual ou o ID como fallback
         role: novoMembro.role || 'caixa',
         lojaId: meuLojaId || '',
-        nomeLoja: usuario.nomeLoja || 'Minha Loja', // Fallback para evitar o erro do Firebase
+        nomeLoja: usuario.nomeLoja || 'Minha Loja',
         status: 'ativo',
         adicionadoPor: usuario.nome || 'Admin',
         createdAt: new Date().toISOString()
@@ -92,7 +85,7 @@ const Equipa = ({ usuario, avisar }) => {
       await setDoc(doc(db, "usuarios", idGerado), dadosFuncionario);
       
       setMostrarModal(false);
-      setNovoMembro({ nome: '', email: '', telemovel: '', role: 'caixa' });
+      setNovoMembro({ nome: '', email: '', telemovel: '', password: '', role: 'caixa' });
       avisar("FUNCIONÁRIO ADICIONADO!", "sucesso");
 
     } catch (error) {
@@ -165,9 +158,14 @@ const Equipa = ({ usuario, avisar }) => {
               <div className="space-y-1">
                 <h3 className="font-black text-slate-900 uppercase text-lg italic tracking-tight">{membro.nome}</h3>
                 <p className="text-xs font-bold text-slate-400 truncate">{membro.email}</p>
+                {/* Exibição da Senha para o Admin */}
+                <div className="mt-4 flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-dashed border-slate-200">
+                  <Lock size={12} className="text-slate-400" />
+                  <span className="text-[10px] font-mono font-bold text-slate-600">Senha: {membro.password}</span>
+                </div>
               </div>
 
-              <div className="mt-8 pt-6 border-t border-slate-50">
+              <div className="mt-6 pt-6 border-t border-slate-50">
                 <button 
                   onClick={() => removerMembro(membro.id, membro.nome)}
                   className="w-full py-4 rounded-2xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest"
@@ -206,6 +204,18 @@ const Equipa = ({ usuario, avisar }) => {
                 value={novoMembro.email} 
                 onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
               />
+
+              <div className="relative">
+                <input 
+                  required 
+                  type="text"
+                  placeholder="Definir Senha de Acesso"
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all pr-12" 
+                  value={novoMembro.password} 
+                  onChange={e => setNovoMembro({...novoMembro, password: e.target.value})} 
+                />
+                <Lock className="absolute right-5 top-5 text-slate-300" size={20} />
+              </div>
 
               <input 
                 placeholder="Telemóvel (Opcional)"
