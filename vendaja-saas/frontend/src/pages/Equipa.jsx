@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { 
-  Users, UserPlus, Trash2, Shield, 
+  Users, UserPlus, Trash2, Shield, Copy,
   UserCircle, Mail, Phone, Loader2, X, AlertCircle, Lock
 } from 'lucide-react';
 
@@ -32,10 +32,10 @@ const Equipa = ({ usuario, avisar }) => {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const lista = snapshot.docs.map(doc => ({
-        id: doc.id, // O ID aqui será o email ou o UID do admin
+        id: doc.id,
         ...doc.data()
       }));
-      // Filtra para não mostrar o próprio usuário logado na lista da equipa
+      // Filtra para não mostrar o próprio usuário logado nem o superadmin
       setMembros(lista.filter(m => m.email !== usuario.email));
       setCarregando(false);
     }, (error) => {
@@ -46,33 +46,42 @@ const Equipa = ({ usuario, avisar }) => {
     return () => unsubscribe();
   }, [usuario, avisar]);
 
-  // 2. Função para Adicionar Membro (USANDO EMAIL COMO ID)
+  // Função utilitária para copiar senha
+  const copiarSenha = (senha) => {
+    navigator.clipboard.writeText(senha);
+    avisar("SENHA COPIADA!", "sucesso");
+  };
+
+  // 2. Função para Adicionar Membro
   const adicionarMembro = async (e) => {
     e.preventDefault();
     setSalvando(true);
 
     try {
       const meuLojaId = usuario?.lojaId || usuario?.uid;
-      const emailId = novoMembro.email.toLowerCase().trim(); // O ID será o email
+      const emailId = novoMembro.email.toLowerCase().trim();
 
-      // Verificar se este email já existe para evitar sobreposição
+      // Verificar se este email já existe
       const docExistente = await getDoc(doc(db, "usuarios", emailId));
       if (docExistente.exists()) {
-        avisar("ESTE E-MAIL JÁ ESTÁ REGISTADO NO SISTEMA.", "erro");
+        avisar("ESTE E-MAIL JÁ ESTÁ EM USO.", "erro");
         setSalvando(false);
         return;
       }
 
-      // Verificação de Limite de Plano
-      const lojaRef = doc(db, "usuarios", meuLojaId);
-      const lojaSnap = await getDoc(lojaRef);
-      const dadosLoja = lojaSnap.data();
+      // BUSCA O LIMITE NO DOCUMENTO DO DONO (meuLojaId)
+      const donoRef = doc(db, "usuarios", meuLojaId);
+      const donoSnap = await getDoc(donoRef);
+      const dadosDono = donoSnap.data();
 
-      const limiteMaximo = dadosLoja?.maxUsers || 1;
-      const totalNoSistema = membros.length + 1;
+      // Se não houver maxUsers definido, assume 1 como segurança
+      const limiteMaximo = dadosDono?.maxUsers || 1;
+      // Contamos todos os membros (incluindo o dono no contador se necessário, ou apenas funcionários)
+      // Aqui vamos contar apenas funcionários ativos na lista
+      const totalFuncionarios = membros.length;
 
-      if (totalNoSistema >= limiteMaximo) {
-        avisar(`BLOQUEADO: O teu limite é de ${limiteMaximo} utilizador(es).`, "erro");
+      if (totalFuncionarios >= limiteMaximo) {
+        avisar(`LIMITE ATINGIDO: O teu plano permite ${limiteMaximo} funcionário(s).`, "erro");
         setSalvando(false);
         return;
       }
@@ -80,39 +89,38 @@ const Equipa = ({ usuario, avisar }) => {
       const idFunc = `FUNC_${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
       
       const dadosFuncionario = {
-        uid: idFunc, // UID interno para referência
-        nome: novoMembro.nome || '',
+        uid: idFunc, 
+        nome: novoMembro.nome.trim(),
         email: emailId,
         telemovel: novoMembro.telemovel || '',
         password: novoMembro.password || idFunc,
         role: novoMembro.role || 'caixa',
-        lojaId: meuLojaId || '',
-        nomeLoja: usuario.nomeLoja || 'Minha Loja',
+        lojaId: meuLojaId,
+        nomeLoja: usuario.nomeLoja || dadosDono?.nomeLoja || 'Minha Loja',
         status: 'ativo',
         adicionadoPor: usuario.nome || 'Admin',
         createdAt: new Date().toISOString()
       };
 
-      // GRAVAÇÃO CRUCIAL: Usamos emailId (o email) como a chave do documento
       await setDoc(doc(db, "usuarios", emailId), dadosFuncionario);
       
       setMostrarModal(false);
       setNovoMembro({ nome: '', email: '', telemovel: '', password: '', role: 'caixa' });
-      avisar("FUNCIONÁRIO ADICIONADO!", "sucesso");
+      avisar("ACESSO CRIADO COM SUCESSO!", "sucesso");
 
     } catch (error) {
       console.error("Erro ao criar acesso:", error);
-      avisar("ERRO AO CRIAR ACESSO", "erro");
+      avisar("FALHA AO SALVAR NO BANCO DE DADOS", "erro");
     } finally {
       setSalvando(false);
     }
   };
 
   const removerMembro = async (id, nome) => {
-    if (window.confirm(`Remover acesso de ${nome}?`)) {
+    if (window.confirm(`Tens a certeza que queres revogar o acesso de ${nome}?`)) {
       try {
         await deleteDoc(doc(db, "usuarios", id));
-        avisar("ACESSO REMOVIDO", "sucesso");
+        avisar("ACESSO ELIMINADO", "sucesso");
       } catch (error) {
         avisar("ERRO AO REMOVER", "erro");
       }
@@ -126,7 +134,7 @@ const Equipa = ({ usuario, avisar }) => {
         <div>
           <h2 className="text-3xl font-black text-slate-900 italic uppercase tracking-tighter">Gestão de Equipa</h2>
           <p className="text-slate-500 font-bold text-sm uppercase tracking-widest mt-1">
-            Controlo de Acessos: <span className="text-blue-600">{usuario.nomeLoja || 'Loja Local'}</span>
+            Loja: <span className="text-blue-600">{usuario.nomeLoja || 'Unidade Local'}</span>
           </p>
         </div>
         
@@ -134,8 +142,8 @@ const Equipa = ({ usuario, avisar }) => {
           onClick={() => setMostrarModal(true)}
           className="bg-slate-900 text-white px-8 py-4 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-blue-600 transition-all shadow-xl shadow-slate-200 active:scale-95 group"
         >
-          <UserPlus size={20} className="group-hover:rotate-12 transition-transform" /> 
-          <span className="uppercase tracking-widest text-xs">Adicionar Funcionário</span>
+          <UserPlus size={20} /> 
+          <span className="uppercase tracking-widest text-xs">Novo Funcionário</span>
         </button>
       </div>
 
@@ -143,19 +151,19 @@ const Equipa = ({ usuario, avisar }) => {
         {carregando ? (
           <div className="col-span-full py-20 flex flex-col items-center justify-center gap-4 text-slate-400">
             <Loader2 className="animate-spin" size={32} />
-            <p className="font-black text-[10px] uppercase tracking-[0.3em]">Validando Equipa...</p>
+            <p className="font-black text-[10px] uppercase tracking-[0.3em]">Sincronizando Equipa...</p>
           </div>
         ) : membros.length === 0 ? (
           <div className="col-span-full bg-white p-20 rounded-[3rem] text-center border border-slate-100 flex flex-col items-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-4">
                 <Users size={32} />
             </div>
-            <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Apenas tu (Dono) tens acesso no momento.</p>
+            <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Nenhum funcionário registado.</p>
           </div>
         ) : (
           membros.map(membro => (
-            <div key={membro.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-6">
+            <div key={membro.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative">
+              <div className="absolute top-6 right-6">
                 <span className={`text-[9px] font-black uppercase px-3 py-1.5 rounded-xl tracking-widest ${
                   membro.role === 'admin' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'
                 }`}>
@@ -170,9 +178,16 @@ const Equipa = ({ usuario, avisar }) => {
               <div className="space-y-1">
                 <h3 className="font-black text-slate-900 uppercase text-lg italic tracking-tight">{membro.nome}</h3>
                 <p className="text-xs font-bold text-slate-400 truncate">{membro.email}</p>
-                <div className="mt-4 flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-dashed border-slate-200">
-                  <Lock size={12} className="text-slate-400" />
-                  <span className="text-[10px] font-mono font-bold text-slate-600">Senha: {membro.password}</span>
+                
+                <div 
+                  onClick={() => copiarSenha(membro.password)}
+                  className="mt-4 flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-dashed border-slate-200 cursor-pointer hover:border-blue-400 transition-colors group/pwd"
+                >
+                  <div className="flex items-center gap-2">
+                    <Lock size={12} className="text-slate-400" />
+                    <span className="text-[10px] font-mono font-bold text-slate-600">Senha: {membro.password}</span>
+                  </div>
+                  <Copy size={12} className="text-slate-300 group-hover/pwd:text-blue-500" />
                 </div>
               </div>
 
@@ -195,61 +210,62 @@ const Equipa = ({ usuario, avisar }) => {
           <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden">
             <div className="p-10 pb-6 flex justify-between items-center">
               <h2 className="text-2xl font-black text-slate-900 italic uppercase tracking-tighter">Novo Acesso</h2>
-              <button onClick={() => setMostrarModal(false)} className="text-slate-400 hover:text-red-500"><X size={24}/></button>
+              <button onClick={() => setMostrarModal(false)} className="text-slate-400 hover:text-red-500 transition-colors"><X size={24}/></button>
             </div>
 
             <form onSubmit={adicionarMembro} className="p-10 pt-0 space-y-5">
-              <input 
-                required 
-                placeholder="Nome do Funcionário"
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
-                value={novoMembro.nome} 
-                onChange={e => setNovoMembro({...novoMembro, nome: e.target.value})} 
-              />
-
-              <input 
-                required 
-                type="email" 
-                placeholder="E-mail de Login"
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
-                value={novoMembro.email} 
-                onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
-              />
-
-              <div className="relative">
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Nome Completo</label>
                 <input 
                   required 
-                  type="text"
-                  placeholder="Definir Senha de Acesso"
-                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all pr-12 text-slate-900" 
-                  value={novoMembro.password} 
-                  onChange={e => setNovoMembro({...novoMembro, password: e.target.value})} 
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                  value={novoMembro.nome} 
+                  onChange={e => setNovoMembro({...novoMembro, nome: e.target.value})} 
                 />
-                <Lock className="absolute right-5 top-5 text-slate-300" size={20} />
               </div>
 
-              <input 
-                placeholder="Telemóvel (Opcional)"
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
-                value={novoMembro.telemovel} 
-                onChange={e => setNovoMembro({...novoMembro, telemovel: e.target.value})} 
-              />
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">E-mail de Login</label>
+                <input 
+                  required 
+                  type="email" 
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                  value={novoMembro.email} 
+                  onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
+                />
+              </div>
 
-              <select 
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none text-slate-900"
-                value={novoMembro.role} 
-                onChange={e => setNovoMembro({...novoMembro, role: e.target.value})}
-              >
-                <option value="caixa">Acesso: Apenas Vendas (Caixa)</option>
-                <option value="admin">Acesso: Gestor (Admin)</option>
-              </select>
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Senha de Acesso</label>
+                <div className="relative">
+                  <input 
+                    required 
+                    className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all pr-12" 
+                    value={novoMembro.password} 
+                    onChange={e => setNovoMembro({...novoMembro, password: e.target.value})} 
+                  />
+                  <Lock className="absolute right-5 top-5 text-slate-300" size={20} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Nível de Permissão</label>
+                <select 
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500"
+                  value={novoMembro.role} 
+                  onChange={e => setNovoMembro({...novoMembro, role: e.target.value})}
+                >
+                  <option value="caixa">CAIXA (Apenas Vendas)</option>
+                  <option value="admin">GESTOR (Acesso Total)</option>
+                </select>
+              </div>
 
               <button 
                 type="submit"
                 disabled={salvando} 
-                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black mt-4 flex items-center justify-center gap-3 hover:bg-blue-600 transition-all disabled:opacity-50"
+                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black mt-4 flex items-center justify-center gap-3 hover:bg-blue-600 transition-all disabled:opacity-50 shadow-lg shadow-slate-200"
               >
-                {salvando ? <Loader2 className="animate-spin" size={18} /> : "CRIAR CREDENCIAIS"}
+                {salvando ? <Loader2 className="animate-spin" size={18} /> : "CONFIRMAR CREDENCIAIS"}
               </button>
             </form>
           </div>

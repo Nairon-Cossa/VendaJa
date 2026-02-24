@@ -68,7 +68,11 @@ const SuperAdmin = () => {
         getDocs(collection(db, "vendas"))
       ]);
 
-      const listaUsers = snapUsers.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Filtrar apenas DONOS (quem não tem lojaId ou o lojaId é igual ao próprio ID)
+      const listaUsers = snapUsers.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(u => !u.lojaId || u.lojaId === u.id);
+
       const resumoFinanceiro = {};
       let globalMoney = 0;
       let globalSales = 0;
@@ -86,7 +90,7 @@ const SuperAdmin = () => {
       });
 
       setFaturamentos(resumoFinanceiro);
-      setClientes(listaUsers.sort((a, b) => (b.criadoEm?.seconds || 0) - (a.criadoEm?.seconds || 0)));
+      setClientes(listaUsers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)));
       setMetricas({
         totalLojas: listaUsers.length,
         lojasAtivas: listaUsers.filter(u => u.status === 'ativo').length,
@@ -113,21 +117,22 @@ const SuperAdmin = () => {
     } catch (error) { alert("FALHA NA OPERAÇÃO."); }
   };
 
-  // NOVA LÓGICA DE PLANOS ATUALIZADA
   const setNivelPlano = async (uid, planoNivel, maxUsers) => {
-    if (!window.confirm(`ALTERAR ESTA UNIDADE PARA O PLANO ${planoNivel}? (Limite: ${maxUsers} usuários)`)) return;
+    if (!window.confirm(`ALTERAR ESTA UNIDADE PARA O ${planoNivel.toUpperCase()}?\nLimite de Equipa: ${maxUsers} utilizadores.`)) return;
     try {
       await updateDoc(doc(db, "usuarios", uid), { 
         plano: planoNivel,
-        maxUsers: maxUsers
+        maxUsers: maxUsers // Este campo é lido pelo Equipa.jsx
       });
       setClientes(clientes.map(c => c.id === uid ? { ...c, plano: planoNivel, maxUsers: maxUsers } : c));
-    } catch (error) { alert("FALHA AO ALTERAR PLANO."); }
+    } catch (error) { 
+      console.error(error);
+      alert("FALHA AO ALTERAR PLANO."); 
+    }
   };
 
   const apagarConta = async (uid, statusAtual) => {
-    if (!window.confirm("ALERTA CRÍTICO: Tem a certeza absoluta que deseja APAGAR esta unidade? Esta ação é irreversível e removerá os dados da base de dados.")) return;
-    
+    if (!window.confirm("ALERTA CRÍTICO: APAGAR esta unidade? Ação IRREVERSÍVEL.")) return;
     try {
       await deleteDoc(doc(db, "usuarios", uid));
       setClientes(clientes.filter(c => c.id !== uid));
@@ -136,35 +141,32 @@ const SuperAdmin = () => {
         totalLojas: prev.totalLojas - 1,
         lojasAtivas: statusAtual === 'ativo' ? prev.lojasAtivas - 1 : prev.lojasAtivas
       }));
-    } catch (error) {
-      console.error("Erro ao apagar conta:", error);
-      alert("FALHA AO APAGAR A CONTA.");
-    }
+    } catch (error) { alert("FALHA AO APAGAR A CONTA."); }
   };
 
   if (!validado) {
     return (
       <div className="min-h-screen bg-[#020617] flex items-center justify-center p-6 font-sans">
-        <form onSubmit={verificarDesafios} className="bg-slate-900 p-10 rounded-[3.5rem] shadow-[0_0_50px_rgba(30,64,175,0.2)] max-w-md w-full border border-slate-800 space-y-5 animate-in zoom-in duration-500">
+        <form onSubmit={verificarDesafios} className="bg-slate-900 p-10 rounded-[3.5rem] shadow-[0_0_50px_rgba(30,64,175,0.2)] max-w-md w-full border border-slate-800 space-y-5">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-blue-600 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-blue-900/50 border-4 border-slate-900">
+            <div className="w-20 h-20 bg-blue-600 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-4 border-4 border-slate-900">
               <KeyRound size={32} />
             </div>
             <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter">HQ Master Access</h2>
             <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.3em] mt-2">Nairon Cossa Dev . Inc</p>
           </div>
 
-          {['pin', 'p1', 'p2', 'p3'].map((campo) => (
+          {['pin', 'pergunta1', 'pergunta2', 'pergunta3'].map((campo, idx) => (
             <div key={campo} className="relative group">
               <input 
                 type={verCampos[campo] ? "text" : "password"} 
                 required 
-                placeholder={campo === 'pin' ? "MASTER SECURITY PIN" : campo === 'p1' ? "FIRST PET NAME" : campo === 'p2' ? "SECRET DESTINATION" : "MASTER CODE"}
-                className="w-full bg-slate-850 bg-slate-800/50 p-5 pr-14 rounded-2xl outline-none border border-slate-700 focus:border-blue-500 text-white font-bold text-xs transition-all placeholder:text-slate-600"
-                value={desafios[campo === 'p1' ? 'pergunta1' : campo === 'p2' ? 'pergunta2' : campo === 'p3' ? 'pergunta3' : 'pin']}
-                onChange={e => setDesafios({...desafios, [campo === 'p1' ? 'pergunta1' : campo === 'p2' ? 'pergunta2' : campo === 'p3' ? 'pergunta3' : 'pin']: e.target.value})}
+                placeholder={idx === 0 ? "MASTER SECURITY PIN" : idx === 1 ? "FIRST PET NAME" : idx === 2 ? "SECRET DESTINATION" : "MASTER CODE"}
+                className="w-full bg-slate-800/50 p-5 pr-14 rounded-2xl outline-none border border-slate-700 focus:border-blue-500 text-white font-bold text-xs transition-all placeholder:text-slate-600"
+                value={desafios[campo]}
+                onChange={e => setDesafios({...desafios, [campo]: e.target.value})}
               />
-              <button type="button" onClick={() => setVerCampos(prev => ({...prev, [campo]: !prev[campo]}))} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-blue-400 transition-colors">
+              <button type="button" onClick={() => setVerCampos(prev => ({...prev, [campo]: !prev[campo]}))} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-blue-400">
                 {verCampos[campo] ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
@@ -175,7 +177,7 @@ const SuperAdmin = () => {
           </button>
           
           {erroValidacao && (
-            <div className="bg-red-500/10 p-4 rounded-2xl border border-red-500/20 animate-in shake">
+            <div className="bg-red-500/10 p-4 rounded-2xl border border-red-500/20">
                <p className="text-red-500 text-[9px] font-black text-center uppercase tracking-widest">{erroValidacao}</p>
             </div>
           )}
@@ -248,7 +250,7 @@ const SuperAdmin = () => {
                 c.nomeLoja?.toLowerCase().includes(busca.toLowerCase()) || 
                 c.email?.toLowerCase().includes(busca.toLowerCase())
               ).map((cliente) => {
-                const fin = faturamentos[cliente.lojaId] || { total: 0, qtdVendas: 0 };
+                const fin = faturamentos[cliente.id] || { total: 0, qtdVendas: 0 };
                 const isAtivo = cliente.status === 'ativo';
                 
                 return (
@@ -262,10 +264,10 @@ const SuperAdmin = () => {
                       <div className="space-y-1">
                         <div className="flex items-center gap-3">
                           <h3 className="font-black text-slate-900 uppercase italic text-lg tracking-tighter">{cliente.nomeLoja || 'Sem Nome'}</h3>
-                          {!isAtivo && <span className="bg-red-50 text-red-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-red-100">Unidade Suspensa</span>}
-                          {cliente.plano && <span className="bg-blue-50 text-blue-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-blue-100">{cliente.plano} ({cliente.maxUsers} users)</span>}
+                          {!isAtivo && <span className="bg-red-50 text-red-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-red-100">Suspensa</span>}
+                          {cliente.plano && <span className="bg-blue-50 text-blue-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-blue-100">{cliente.plano} ({cliente.maxUsers || 1}U)</span>}
                         </div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{cliente.email} • ID: <span className="text-slate-600">{cliente.lojaId}</span></p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{cliente.email} • ID: <span className="text-slate-600">{cliente.id}</span></p>
                       </div>
                     </div>
 
@@ -280,25 +282,25 @@ const SuperAdmin = () => {
                       </div>
                     </div>
 
-                    {/* INTERFACE DE PLANOS ATUALIZADA */}
+                    {/* INTERFACE DE PLANOS */}
                     <div className="flex flex-wrap gap-2 w-full lg:w-auto bg-slate-50 p-3 rounded-[2rem] border border-slate-100">
                       {[
-                        { n: 'P1', u: 1, label: 'Mercearia' },
-                        { n: 'P2', u: 5, label: 'Média' },
-                        { n: 'P3', u: 10, label: 'Empresa' },
-                        { n: 'P4', u: 999, label: 'Custom' }
+                        { n: '1', u: 1, label: 'Básico' },
+                        { n: '2', u: 5, label: 'Média' },
+                        { n: '3', u: 10, label: 'Grande' },
+                        { n: '4', u: 999, label: 'Ilimitado' }
                       ].map((p) => (
                         <button 
                           key={p.n}
-                          onClick={() => setNivelPlano(cliente.id, `Plano ${p.n.at(-1)}`, p.u)}
+                          onClick={() => setNivelPlano(cliente.id, `Plano ${p.n}`, p.u)}
                           className={`px-3 py-2 rounded-xl font-black text-[9px] uppercase transition-all flex flex-col items-center justify-center min-w-[60px] ${
-                            cliente.plano === `Plano ${p.n.at(-1)}` 
+                            cliente.plano === `Plano ${p.n}` 
                             ? 'bg-blue-600 text-white shadow-md' 
                             : 'bg-white text-slate-400 hover:text-blue-600 border border-slate-200'
                           }`}
                         >
-                          <span>{p.n}</span>
-                          <span className="opacity-60 text-[7px]">{p.u > 50 ? '∞' : p.u}U</span>
+                          <span>P{p.n}</span>
+                          <span className="opacity-60 text-[7px]">{p.u > 100 ? '∞' : p.u}U</span>
                         </button>
                       ))}
                     </div>
@@ -308,7 +310,7 @@ const SuperAdmin = () => {
                         onClick={() => alterarStatus(cliente.id, cliente.status)}
                         className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${
                           isAtivo 
-                          ? 'bg-white text-red-500 border border-red-100 hover:bg-red-50' 
+                          ? 'bg-white text-red-500 border border-red-100' 
                           : 'bg-emerald-500 text-white hover:bg-emerald-600'
                         }`}
                       >
@@ -316,7 +318,7 @@ const SuperAdmin = () => {
                       </button>
 
                       <button 
-                        onClick={() => apagarConta(cliente.id, cliente.status)}
+                        onClick={() => apagarCuenta(cliente.id, cliente.status)}
                         className="w-12 h-12 rounded-2xl text-red-500 bg-red-50 hover:bg-red-600 hover:text-white transition-all shadow-sm flex items-center justify-center border border-red-100"
                       >
                         <Trash2 size={18} />

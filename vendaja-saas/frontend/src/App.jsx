@@ -56,6 +56,7 @@ const TelaBloqueio = ({ usuario, fazerLogout, MEU_WHATSAPP }) => {
 };
 
 function App() {
+  // Inicialização do estado via localStorage para evitar "flashing" de login
   const [usuario, setUsuario] = useState(() => {
     const salvo = localStorage.getItem('vendaJa_sessao');
     return salvo ? JSON.parse(salvo) : null;
@@ -82,7 +83,8 @@ function App() {
 
   // VERIFICAÇÕES DE PODER REFORÇADAS
   const isSuperAdmin = usuario?.email === "naironcossa.dev@gmail.com" || usuario?.role === 'superadmin';
-  const isAdmin = usuario?.role === 'admin' || (usuario?.uid === usuario?.lojaId);
+  // Ajuste na lógica de Admin para aceitar funcionários que não são donos mas estão logados
+  const isAdmin = usuario?.role === 'admin' || (usuario?.uid === usuario?.lojaId && usuario?.role !== 'caixa');
 
   const [configLoja, setConfigLoja] = useState({
     nuit: '', endereco: '', telefone: '', moeda: 'MT', mensagemRecibo: 'Obrigado!', logo: null
@@ -102,8 +104,10 @@ function App() {
     };
   }, []);
 
+  // UPDATE: Verificação de Auth adaptada para sessões manuais (Funcionários)
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      // Só desloga se NÃO houver user no Firebase E NÃO houver sessão manual no LocalStorage
       if (!user && !localStorage.getItem('vendaJa_sessao')) {
         fazerLogout();
       }
@@ -118,13 +122,18 @@ function App() {
       return;
     }
     
-    const unsubUser = onSnapshot(doc(db, "usuarios", usuario.uid), (docSnap) => {
+    // O ID do documento pode ser o UID (Dono) ou o Email (Funcionário)
+    // Buscamos pelo ID que está guardado no estado 'usuario'
+    const idParaBusca = usuario.email && usuario.role !== 'superadmin' ? usuario.email : usuario.uid;
+
+    const unsubUser = onSnapshot(doc(db, "usuarios", idParaBusca), (docSnap) => {
       if (docSnap.exists()) {
-        const novosDados = { ...docSnap.data(), uid: docSnap.id };
+        const novosDados = { ...docSnap.data(), idFirestore: docSnap.id };
         setUsuario(novosDados); 
         localStorage.setItem('vendaJa_sessao', JSON.stringify(novosDados));
       } else {
-        fazerLogout();
+        // Se o documento sumiu (ex: deletado), desloga
+        if (!isSuperAdmin) fazerLogout();
       }
       setCarregando(false);
     }, (error) => {
@@ -133,12 +142,12 @@ function App() {
     });
     
     return () => unsubUser();
-  }, [usuario?.uid, fazerLogout]);
+  }, [usuario?.uid, fazerLogout, isSuperAdmin]);
 
-  // Sincronização das Configurações da Loja (Usa o lojaId para funcionários verem o recibo certo)
+  // Sincronização das Configurações da Loja
   useEffect(() => {
     const targetId = usuario?.lojaId || usuario?.uid;
-    if (!targetId || usuario?.status !== 'ativo') return;
+    if (!targetId || (usuario?.status !== 'ativo' && !isSuperAdmin)) return;
 
     const unsubConfig = onSnapshot(doc(db, "configuracoes", targetId), (docSnap) => {
       if (docSnap.exists()) {
@@ -146,19 +155,19 @@ function App() {
       }
     });
     return () => unsubConfig();
-  }, [usuario?.lojaId, usuario?.uid, usuario?.status]);
+  }, [usuario?.lojaId, usuario?.uid, usuario?.status, isSuperAdmin]);
 
-  // Sincronização de Produtos (Usa o lojaId para funcionários venderem o stock do patrão)
+  // Sincronização de Produtos
   useEffect(() => {
     const targetId = usuario?.lojaId || usuario?.uid;
-    if (!targetId || usuario?.status !== 'ativo') return;
+    if (!targetId || (usuario?.status !== 'ativo' && !isSuperAdmin)) return;
 
     const q = query(collection(db, "produtos"), where("lojaId", "==", targetId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setProdutos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
     return () => unsubscribe(); 
-  }, [usuario?.lojaId, usuario?.uid, usuario?.status]);
+  }, [usuario?.lojaId, usuario?.uid, usuario?.status, isSuperAdmin]);
 
   if (carregando) {
     return (

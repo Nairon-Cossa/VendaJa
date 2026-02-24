@@ -44,13 +44,14 @@ const Login = ({ aoLogar }) => {
           }
 
           // Login de funcionário bem-sucedido
-          aoLogar({ uid: docSnap.id, ...dadosUsuario });
+          // UPDATE: Persistência manual para funcionários
+          const sessaoFuncionario = { uid: docSnap.id, ...dadosUsuario };
+          localStorage.setItem('vendaJa_sessao', JSON.stringify(sessaoFuncionario));
+          
+          aoLogar(sessaoFuncionario);
           navigate('/');
           return;
         }
-        // Se o documento existe mas a senha está errada, podemos optar por
-        // continuar para o Auth (caso seja um Admin com senha diferente) 
-        // ou barrar logo aqui. O código abaixo segue para o Auth oficial.
       }
 
       /* ============================================================
@@ -63,13 +64,16 @@ const Login = ({ aoLogar }) => {
 
         // BYPASS SUPER ADMIN
         if (user.email?.toLowerCase() === "naironcossa.dev@gmail.com") {
-          aoLogar({
+          const sessaoMaster = {
             uid: user.uid,
             email: user.email,
             role: 'superadmin',
             nome: 'Master Admin',
             status: 'ativo'
-          });
+          };
+          
+          localStorage.setItem('vendaJa_sessao', JSON.stringify(sessaoMaster));
+          aoLogar(sessaoMaster);
           navigate('/gestao-mestra');
           return;
         }
@@ -82,7 +86,12 @@ const Login = ({ aoLogar }) => {
             setErro("CONTA SUSPENSA. CONTACTE O SUPORTE.");
             return;
           }
-          aoLogar({ uid: user.uid, ...dados });
+
+          // UPDATE: Persistência para donos/admin
+          const sessaoDono = { uid: user.uid, ...dados };
+          localStorage.setItem('vendaJa_sessao', JSON.stringify(sessaoDono));
+          
+          aoLogar(sessaoDono);
           navigate('/');
         } else {
           setErro("PERFIL NÃO LOCALIZADO NO SISTEMA.");

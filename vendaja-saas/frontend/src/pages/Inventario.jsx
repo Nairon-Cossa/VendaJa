@@ -32,13 +32,26 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
     temIva: true
   });
 
+  // UPDATE: Resolução do problema do lojaId no Snapshot
   useEffect(() => {
-    if (!usuario?.lojaId) return;
+    // console.log("DEBUG - Usuário Logado:", usuario);
+    
+    // Define o ID alvo: Se for funcionário usa lojaId, se for dono usa o próprio uid
+    const targetLojaId = usuario?.lojaId || (usuario?.role === 'dono' || usuario?.role === 'admin' ? usuario?.uid : null);
+    
+    // console.log("DEBUG - Loja ID para busca:", targetLojaId);
+
+    if (!targetLojaId) {
+      // console.warn("AVISO: Sem LojaID, a busca não será disparada.");
+      return;
+    }
+
     const q = query(
       collection(db, "produtos"),
-      where("lojaId", "==", usuario.lojaId),
+      where("lojaId", "==", targetLojaId),
       orderBy("nome")
     );
+
     const unsub = onSnapshot(q, (snapshot) => {
       const lista = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setProdutos(lista);
@@ -46,8 +59,9 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
       console.error("Erro Firestore Inventário:", error);
       avisar?.("ERRO AO CARREGAR INVENTÁRIO", "erro");
     });
+
     return () => unsub();
-  }, [usuario?.lojaId]);
+  }, [usuario, avisar]);
 
   // MÉTRICAS FINANCEIRAS DO INVENTÁRIO
   const metricas = useMemo(() => {
@@ -61,7 +75,8 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
 
   const salvarProduto = async (e) => {
     e.preventDefault();
-    if (!usuario?.lojaId) return;
+    const targetLojaId = usuario?.lojaId || usuario?.uid;
+    if (!targetLojaId) return;
     
     setCarregando(true);
     const batch = writeBatch(db);
@@ -78,7 +93,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         fornecedor: novoProd.fornecedor.toUpperCase().trim(),
         temIva: novoProd.temIva,
         venderOnline: isPremium ? novoProd.venderOnline : false,
-        lojaId: usuario.lojaId,
+        lojaId: targetLojaId,
         atualizadoEm: serverTimestamp()
       };
 
@@ -90,7 +105,6 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         batch.set(novoProdRef, { ...dados, criadoEm: serverTimestamp() });
       }
 
-      // Executa o batch (Firebase trata o enfileiramento se estiver offline)
       batch.commit().catch(err => console.error("Erro de sincronização:", err));
 
       fecharModal();
@@ -156,7 +170,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
             <Package className="text-blue-600" size={35}/> Inventário
           </h2>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mt-1">
-             Controlo Físico e Financeiro de Stock
+              Controlo Físico e Financeiro de Stock
           </p>
         </div>
         <button onClick={() => setMostrarModal(true)} className="bg-slate-900 text-white px-10 py-5 rounded-[2rem] font-black flex gap-3 hover:bg-blue-600 transition-all shadow-2xl active:scale-95 text-sm uppercase tracking-widest">
