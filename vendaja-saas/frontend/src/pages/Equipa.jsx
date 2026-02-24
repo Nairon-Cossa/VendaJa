@@ -46,7 +46,7 @@ const Equipa = ({ usuario, avisar }) => {
     return () => unsubscribe();
   }, [usuario, avisar]);
 
-  // 2. Função para Adicionar Membro (AJUSTADA PARA O BLOQUEIO DE LIMITE)
+  // 2. Função para Adicionar Membro (AJUSTADA PARA EVITAR UNDEFINED)
   const adicionarMembro = async (e) => {
     e.preventDefault();
     setSalvando(true);
@@ -69,22 +69,23 @@ const Equipa = ({ usuario, avisar }) => {
       if (totalNoSistema >= limiteMaximo) {
         avisar(`BLOQUEADO: O teu limite é de ${limiteMaximo} utilizador(es). Faz upgrade para adicionar mais.`, "erro");
         setSalvando(false);
-        return; // PARA AQUI
+        return;
       }
 
       // Se passou o bloqueio, gera o acesso
       const idGerado = `FUNC_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       
+      // CORREÇÃO: Garantir que nenhum campo seja undefined
       const dadosFuncionario = {
         uid: idGerado,
-        nome: novoMembro.nome,
-        email: novoMembro.email.toLowerCase().trim(),
-        telemovel: novoMembro.telemovel,
-        role: novoMembro.role, // 'caixa' ou 'admin'
-        lojaId: meuLojaId,    // Vincula ao dono
-        nomeLoja: usuario.nomeLoja,
-        status: 'ativo',       // Funcionário já entra ativo
-        adicionadoPor: usuario.nome,
+        nome: novoMembro.nome || '',
+        email: novoMembro.email.toLowerCase().trim() || '',
+        telemovel: novoMembro.telemovel || '',
+        role: novoMembro.role || 'caixa',
+        lojaId: meuLojaId || '',
+        nomeLoja: usuario.nomeLoja || 'Minha Loja', // Fallback para evitar o erro do Firebase
+        status: 'ativo',
+        adicionadoPor: usuario.nome || 'Admin',
         createdAt: new Date().toISOString()
       };
 
@@ -95,7 +96,7 @@ const Equipa = ({ usuario, avisar }) => {
       avisar("FUNCIONÁRIO ADICIONADO!", "sucesso");
 
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao criar acesso:", error);
       avisar("ERRO AO CRIAR ACESSO", "erro");
     } finally {
       setSalvando(false);
@@ -120,7 +121,7 @@ const Equipa = ({ usuario, avisar }) => {
         <div>
           <h2 className="text-3xl font-black text-slate-900 italic uppercase tracking-tighter">Gestão de Equipa</h2>
           <p className="text-slate-500 font-bold text-sm uppercase tracking-widest mt-1">
-            Controlo de Acessos: <span className="text-blue-600">{usuario.nomeLoja}</span>
+            Controlo de Acessos: <span className="text-blue-600">{usuario.nomeLoja || 'Loja Local'}</span>
           </p>
         </div>
         
@@ -204,6 +205,13 @@ const Equipa = ({ usuario, avisar }) => {
                 className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
                 value={novoMembro.email} 
                 onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
+              />
+
+              <input 
+                placeholder="Telemóvel (Opcional)"
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                value={novoMembro.telemovel} 
+                onChange={e => setNovoMembro({...novoMembro, telemovel: e.target.value})} 
               />
 
               <select 
