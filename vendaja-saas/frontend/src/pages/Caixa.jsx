@@ -38,8 +38,11 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const [carregando, setCarregando] = useState(false);
   
   const inputPesquisa = useRef(null);
-  const config = REGRAS_SETOR[usuario.tipoNegocio] || REGRAS_SETOR['Geral'];
-  const moeda = configLoja.moeda || 'MT';
+  const config = REGRAS_SETOR[usuario?.tipoNegocio] || REGRAS_SETOR['Geral'];
+  const moeda = configLoja?.moeda || 'MT';
+
+  // Identificador mestre para a loja (garante que dono e funcionário vejam a mesma coisa)
+  const empresaId = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
   const subtotal = carrinho.reduce((acc, item) => acc + (Number(item.preco) * item.qtd), 0);
   const valorDesconto = Number(desconto) || 0;
@@ -48,7 +51,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const totalFinal = baseTributavel + valorIva;
 
   const produtosDaLoja = produtos.filter(p => 
-    p.lojaId === usuario.lojaId && 
+    (p.empresaId === empresaId || p.lojaId === empresaId) && 
     (p.nome.toLowerCase().includes(pesquisa.toLowerCase()) || 
      (p.referencia && p.referencia.toLowerCase().includes(pesquisa.toLowerCase())))
   );
@@ -56,7 +59,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const adicionarAoCarrinho = (p) => {
     const itemNoCarrinho = carrinho.find(item => item.id === p.id);
     if (p.stock <= (itemNoCarrinho?.qtd || 0)) {
-      avisar("STOCK ESGOTADO", "erro");
+      avisar?.("STOCK ESGOTADO", "erro");
       return;
     }
     if (itemNoCarrinho) {
@@ -76,16 +79,16 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
     }
   };
 
-  const finalizarVenda = () => {
+  const finalizarVenda = async () => {
     if (carrinho.length === 0 || carregando) return;
     
     if (metodo === 'Dívida (Fiado)' && !nomeCliente) {
-        avisar("NOME DO CLIENTE OBRIGATÓRIO PARA FIADO", "erro");
+        avisar?.("NOME DO CLIENTE OBRIGATÓRIO PARA FIADO", "erro");
         return;
     }
 
     if (['M-Pesa', 'e-Mola', 'Transferência'].includes(metodo) && !referencia) {
-        avisar(`INSIRA A REFERÊNCIA DO PAGAMENTO`, "erro");
+        avisar?.(`INSIRA A REFERÊNCIA DO PAGAMENTO`, "erro");
         return;
     }
 
@@ -96,7 +99,8 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
       const vendaRef = doc(collection(db, "vendas"));
       const dadosVenda = {
         id: vendaRef.id,
-        lojaId: usuario.lojaId, 
+        empresaId: empresaId, // CAMPO CRÍTICO PARA O NOVO DASHBOARD
+        lojaId: empresaId,    // Compatibilidade antiga
         vendedorId: usuario.uid,
         vendedorNome: usuario.nome,
         lojaNome: usuario.nomeLoja,
@@ -107,6 +111,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           id: item.id,
           nome: item.nome,
           preco: Number(item.preco),
+          custoCompra: Number(item.custo || 0), // Salva o custo no momento da venda para lucro real
           qtd: item.qtd
         })),
         subtotal,
@@ -120,14 +125,13 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
         timestamp: serverTimestamp()
       };
 
-      // Adicionar venda ao batch
       batch.set(vendaRef, dadosVenda);
 
-      // Se for Fiado, adicionar ao batch (usando set em vez de addDoc para ser offline-ready)
       if (metodo === 'Dívida (Fiado)') {
         const fiadoRef = doc(collection(db, "fiados"));
         batch.set(fiadoRef, {
-            lojaId: usuario.lojaId,
+            empresaId: empresaId,
+            lojaId: empresaId,
             vendaId: vendaRef.id,
             clienteNome: nomeCliente.toUpperCase(),
             valorTotal: totalFinal,
@@ -137,27 +141,24 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
         });
       }
 
-      // Atualizar stocks no batch
       carrinho.forEach(item => {
         const produtoRef = doc(db, "produtos", item.id);
         batch.update(produtoRef, { stock: increment(-item.qtd) });
       });
 
-      // EXECUTAR BATCH (Sem await para permitir funcionamento offline imediato)
-      batch.commit().catch(err => console.error("Erro ao sincronizar:", err));
+      await batch.commit();
 
-      // Feedback e Limpeza da UI
       setVendaFinalizada(dadosVenda);
       
       if (navigator.onLine) {
-        avisar("VENDA REGISTADA!", "sucesso");
+        avisar?.("VENDA REGISTADA!", "sucesso");
       } else {
-        avisar("GUARDADO LOCALMENTE (OFFLINE)", "aviso");
+        avisar?.("GUARDADO LOCALMENTE (OFFLINE)", "aviso");
       }
 
     } catch (error) {
       console.error(error);
-      avisar("ERRO NO PROCESSAMENTO", "erro");
+      avisar?.("ERRO NO PROCESSAMENTO", "erro");
     } finally {
       setCarregando(false);
     }
@@ -193,7 +194,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
                 <div>
                   <span className="text-[7px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{p.categoria}</span>
                   <h4 className="font-black text-slate-800 text-[11px] uppercase leading-tight line-clamp-2 mt-1">{p.nome}</h4>
-                  <p className="text-[9px] font-bold text-slate-400 mt-1">S: {p.stock}</p>
+                  <p className="text-[9px] font-bold text-slate-400 mt-1">Stock: {p.stock}</p>
                 </div>
                 <div className="flex items-end justify-between">
                   <p className="text-base font-black text-slate-900 italic tracking-tighter">

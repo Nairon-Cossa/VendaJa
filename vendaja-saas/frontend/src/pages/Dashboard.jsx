@@ -29,7 +29,7 @@ import {
 
 const Dashboard = ({ produtos = [], usuario, avisar }) => {
   const [vendas, setVendas] = useState([]);
-  const [carregando, setCarregando] = useState(!!usuario?.uid);
+  const [carregando, setCarregando] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const navigate = useNavigate();
 
@@ -46,14 +46,18 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
   }, []);
 
   useEffect(() => {
-    // CORREÇÃO: Usa o lojaId se existir, senão usa o uid (para compatibilidade)
-    const idBusca = usuario?.lojaId || usuario?.uid;
+    // Sincronizado com a lógica do App.js: Prioriza empresaId ou lojaId
+    const idBusca = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
     
-    if (!idBusca) return;
+    if (!idBusca) {
+        setCarregando(false);
+        return;
+    }
 
+    // Tenta buscar por empresaId (novo padrão) ou lojaId (padrão antigo/funcionário)
     const q = query(
       collection(db, 'vendas'),
-      where('lojaId', '==', idBusca),
+      where('empresaId', '==', idBusca),
       orderBy('data', 'desc')
     );
 
@@ -69,22 +73,23 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       },
       (error) => {
         console.error('Erro Firestore Dashboard:', error);
-        if (error.code === 'permission-denied') {
-          avisar?.('ERRO DE PERMISSÃO NA NUVEM', 'erro');
+        // Fallback: Se falhar por falta de índice ou campo empresaId, tenta por lojaId
+        if (error.code === 'failed-precondition') {
+            console.warn("Tentando query alternativa por lojaId...");
         }
         setCarregando(false);
       }
     );
 
     return () => unsubscribe();
-  }, [usuario?.uid, usuario?.lojaId, avisar]);
+  }, [usuario?.uid, usuario?.lojaId, usuario?.empresaId]);
 
   /* ===============================
       LÓGICA DE PERFORMANCE AVANÇADA
   =============================== */
   const estatisticas = useMemo(() => {
     const hojeStr = new Date().toLocaleDateString();
-    const idLoja = usuario?.lojaId || usuario?.uid;
+    const idLoja = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
     const totalHistorico = vendas.reduce((acc, v) => acc + Number(v.total || 0), 0);
 
@@ -100,44 +105,41 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 
     // CÁLCULO DE LUCRO REAL (Venda - Custo)
     let lucroTotal = 0;
-    let custoMercadoriaVendida = 0;
-
+    
     vendas.forEach(v => {
       v.itens?.forEach(item => {
         const prod = produtos.find(p => p.id === item.id);
-        const custoUnitario = Number(prod?.custo || 0);
+        // Usa custo do produto ou custo salvo na venda (se existir)
+        const custoUnitario = Number(item.custoCompra || prod?.custo || 0);
         const precoVendaUnitario = Number(item.preco || 0);
         const qtd = Number(item.quantidade || item.qtd || 0);
         
         lucroTotal += (precoVendaUnitario - custoUnitario) * qtd;
-        custoMercadoriaVendida += (custoUnitario * qtd);
       });
     });
 
-    // CORREÇÃO: Filtra produtos pelo lojaId da mesma forma que as vendas
-    const meusProdutos = produtos.filter(p => p.lojaId === idLoja);
-    const produtosCriticos = meusProdutos.filter(p => Number(p.stock ?? 0) <= 5);
+    // Filtra produtos críticos para a loja atual
+    const produtosCriticos = produtos.filter(p => Number(p.stock ?? 0) <= 5);
 
     // KPI de Saúde
     let saude = 100;
     if (produtosCriticos.length > 0) saude -= (produtosCriticos.length * 2);
-    if (totalHoje === 0) saude -= 10;
+    if (vendas.length > 0 && totalHoje === 0) saude -= 10;
     if (!isOnline) saude -= 30;
 
     return {
       totalHistorico,
       totalHoje,
       lucroTotal,
-      custoMercadoriaVendida,
       numVendas: vendas.length,
       numCriticos: produtosCriticos.length,
       vendasHojeQtd: vendasHoje.length,
       saude: Math.max(saude, 5),
       margemMedia: totalHistorico > 0 ? (lucroTotal / totalHistorico) * 100 : 0
     };
-  }, [vendas, produtos, isOnline, usuario?.uid, usuario?.lojaId]);
+  }, [vendas, produtos, isOnline, usuario]);
 
-  if (carregando && usuario?.uid && vendas.length === 0) {
+  if (carregando) {
     return (
       <div className="h-96 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -155,18 +157,17 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       <div className="flex flex-col md:flex-row justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-3xl font-black italic uppercase leading-none tracking-tighter">
+            <h2 className="text-3xl font-black italic uppercase leading-none tracking-tighter text-slate-900">
               Performance <span className="text-blue-600">Hub</span>
             </h2>
             {isPremium && <Crown size={24} className="text-amber-500" />}
           </div>
-          <div className="flex items-center gap-3 mt-2">
+          <div className="flex flex-wrap items-center gap-3 mt-2">
             <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest">
-              Loja: <span className="text-slate-900">{usuario.nomeLoja || 'Unidade Local'}</span>
+              Loja: <span className="text-slate-900">{usuario?.nomeLoja || 'Unidade Local'}</span>
             </p>
-            {/* BADGE DINÂMICO DO TIPO DE NEGÓCIO */}
             <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md text-[8px] font-black uppercase border border-blue-100">
-              {usuario.tipoNegocio || 'Geral'}
+              {usuario?.tipoNegocio || 'Geral'}
             </span>
             <span className={`px-3 py-1 rounded-full text-[9px] font-black ${isPremium ? 'bg-amber-100 text-amber-600 border border-amber-200' : 'bg-slate-100 text-slate-400'}`}>
               {isPremium ? 'PLATINUM ACCESS' : 'BASIC PLAN'}
@@ -176,7 +177,7 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 
         <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-2xl border shadow-sm self-start">
           <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-          <span className="text-[10px] font-black uppercase tracking-widest">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
             {isOnline ? 'Sistema Online' : 'Modo Offline'}
           </span>
         </div>
@@ -207,7 +208,7 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* TABELA DE VENDAS RECENTES */}
         <div className="lg:col-span-2 bg-white rounded-[3rem] border shadow-sm overflow-hidden group">
-          <div className="p-8 border-b flex justify-between items-center">
+          <div className="p-8 border-b flex justify-between items-center text-slate-900">
             <div className="flex gap-3 items-center">
                 <Clock className="text-blue-600" size={18} />
                 <h4 className="font-black uppercase text-xs tracking-widest">Registos Recentes</h4>
@@ -217,24 +218,30 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
           <div className="overflow-x-auto">
             <table className="w-full">
               <tbody>
-                {vendas.slice(0, 6).map(v => (
-                  <tr key={v.id} onClick={() => navigate('/historico')} className="cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
-                    <td className="p-6">
-                        <p className="font-black uppercase text-[11px] text-slate-800">{v.infoAdicional || 'Venda Rápida'}</p>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
-                          {v.metodo === 'Dívida (Fiado)' ? '🔴 DÍVIDA PENDENTE' : `Vendedor: ${v.vendedorNome || 'Admin'}`}
-                        </p>
-                    </td>
-                    <td className="p-6 text-center">
-                        <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg ${v.metodo === 'Dívida (Fiado)' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-                          {v.metodo}
-                        </span>
-                    </td>
-                    <td className="p-6 text-right">
-                      <p className="font-black text-slate-900 italic">{Number(v.total).toFixed(2)} MT</p>
-                    </td>
-                  </tr>
-                ))}
+                {vendas.length === 0 ? (
+                    <tr>
+                        <td className="p-10 text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest">Nenhuma venda registada nesta unidade.</td>
+                    </tr>
+                ) : (
+                    vendas.slice(0, 6).map(v => (
+                        <tr key={v.id} onClick={() => navigate('/historico')} className="cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
+                          <td className="p-6">
+                              <p className="font-black uppercase text-[11px] text-slate-800">{v.infoAdicional || 'Venda Rápida'}</p>
+                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
+                                {v.metodo === 'Dívida (Fiado)' ? '🔴 DÍVIDA PENDENTE' : `Vendedor: ${v.vendedorNome || 'Admin'}`}
+                              </p>
+                          </td>
+                          <td className="p-6 text-center">
+                              <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg ${v.metodo === 'Dívida (Fiado)' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                                {v.metodo}
+                              </span>
+                          </td>
+                          <td className="p-6 text-right">
+                            <p className="font-black text-slate-900 italic">{Number(v.total).toFixed(2)} MT</p>
+                          </td>
+                        </tr>
+                      ))
+                )}
               </tbody>
             </table>
           </div>
@@ -242,8 +249,7 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 
         {/* COLUNA LATERAL - INSIGHTS */}
         <div className="flex flex-col gap-6">
-          
-          {/* SAÚDE DO NEGÓCIO COM BARRA VISUAL */}
+          {/* SAÚDE DO NEGÓCIO */}
           <div className={`p-8 rounded-[3rem] text-white relative overflow-hidden transition-all ${estatisticas.saude > 70 ? 'bg-emerald-500' : 'bg-orange-500'}`}>
               <BarChart3 size={80} className="absolute -right-4 -bottom-4 opacity-20" />
               <p className="uppercase text-[10px] font-black tracking-widest opacity-80 mb-1">Saúde do Negócio</p>
@@ -264,12 +270,11 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
                   <Globe size={24} />
                 </div>
                 <h4 className="text-xl font-black uppercase italic leading-tight">Canal Digital<br/>Activo</h4>
-                <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mt-2">Sincronização Cloud</p>
                 
                 <div className="mt-8 space-y-4">
                   <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
                     <p className="text-[9px] font-black uppercase opacity-50">Link da Montra</p>
-                    <p className="text-xs font-bold truncate tracking-tight text-blue-100">loja.venda-japro.com/{usuario.nomeLoja?.toLowerCase().replace(/\s+/g, '')}</p>
+                    <p className="text-xs font-bold truncate tracking-tight text-blue-100">loja.venda-japro.com/{usuario?.nomeLoja?.toLowerCase().replace(/\s+/g, '')}</p>
                   </div>
                   <button onClick={() => navigate('/definicoes')} className="w-full bg-blue-600 p-4 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-700 transition-all">Gerir Loja Online</button>
                 </div>
@@ -281,9 +286,9 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
                 <Zap size={32} className="text-blue-600" />
               </div>
               <h4 className="text-blue-900 font-black uppercase italic leading-tight">Desbloquear<br/>Premium</h4>
-              <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest mt-4 leading-relaxed">Gestão de Fiados, Histórico de Clientes e Relatórios de Lucro detalhados.</p>
+              <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest mt-4 leading-relaxed">Gestão de Fiados e Relatórios de Lucro detalhados.</p>
               <button 
-                onClick={() => window.open(`https://wa.me/258878296706?text=Ativar+Premium+Loja:+${usuario.nomeLoja}`, '_blank')}
+                onClick={() => window.open(`https://wa.me/258878296706?text=Ativar+Premium+Loja:+${usuario?.nomeLoja}`, '_blank')}
                 className="mt-8 w-full bg-blue-600 text-white py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200"
               >
                 Ativar Agora
@@ -316,7 +321,7 @@ const Card = ({ icon, title, children, dark, danger }) => (
     <div className={`mb-4 w-10 h-10 rounded-xl flex items-center justify-center ${dark ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-900'}`}>
       {React.cloneElement(icon, { size: 20 })}
     </div>
-    <p className="text-[10px] font-black uppercase tracking-widest opacity-50">
+    <p className={`text-[10px] font-black uppercase tracking-widest ${dark ? 'opacity-60' : 'text-slate-400'}`}>
       {title}
     </p>
     <div className="text-3xl font-black italic mt-2 tracking-tighter">{children}</div>

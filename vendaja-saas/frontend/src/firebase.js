@@ -26,7 +26,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// NOVA FORMA DE INICIALIZAR (Sem o aviso de depreciação)
+// Inicialização com Cache Persistente (Offline Support)
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
@@ -54,9 +54,10 @@ export const atualizarPlanoLoja = async (uid, planoNome, maxUsers) => {
   }
 };
 
-export const contarUsuariosLoja = async (lojaId) => {
+export const contarUsuariosLoja = async (empresaId) => {
   try {
-    const q = query(collection(db, "usuarios"), where("lojaId", "==", lojaId));
+    // UPDATE: Agora filtramos por empresaId para contar todos os usuários vinculados à conta mestre
+    const q = query(collection(db, "usuarios"), where("empresaId", "==", empresaId));
     const snapshot = await getDocs(q);
     return snapshot.size;
   } catch (error) {
@@ -65,18 +66,24 @@ export const contarUsuariosLoja = async (lojaId) => {
   }
 };
 
-export const verificarDisponibilidadePlano = async (lojaId) => {
+export const verificarDisponibilidadePlano = async (usuario) => {
   try {
-    const lojaDoc = await getDoc(doc(db, "usuarios", lojaId));
-    if (!lojaDoc.exists()) return false;
-    const { maxUsers } = lojaDoc.data();
-    const totalAtual = await contarUsuariosLoja(lojaId);
+    // UPDATE: O limite de usuários sempre deve ser lido do documento do DONO (empresaId)
+    const idMestre = usuario?.empresaId || usuario?.uid;
+    const mestreDoc = await getDoc(doc(db, "usuarios", idMestre));
+    
+    if (!mestreDoc.exists()) return { podeAdicionar: false, atual: 0, limite: 0 };
+    
+    const { maxUsers } = mestreDoc.data();
+    const totalAtual = await contarUsuariosLoja(idMestre);
+    
     return {
       podeAdicionar: totalAtual < (maxUsers || 1),
       atual: totalAtual,
       limite: maxUsers || 1
     };
   } catch (error) {
+    console.error("Erro na verificação de plano:", error);
     return { podeAdicionar: false, atual: 0, limite: 0 };
   }
 };

@@ -22,10 +22,9 @@ import LojaPublica from './pages/LojaPublica';
 import Navbar from './components/Navbar';
 import FechoCaixa from './components/FechoCaixa';
 
-// --- COMPONENTE TELA DE BLOQUEIO ---
 const TelaBloqueio = ({ usuario, fazerLogout, MEU_WHATSAPP }) => {
   const isPendente = usuario?.status === 'pendente';
-  const msgWhatsapp = encodeURIComponent(`Olá Nairon! Sou o ${usuario?.nome} da loja ${usuario?.nomeLoja}. Gostaria de ativar o meu acesso ao venda-japro.vercel.app.`);
+  const msgWhatsapp = encodeURIComponent(`Olá Nairon! Sou o ${usuario?.nome} da loja ${usuario?.nomeLoja}. Gostaria de ativar o meu acesso.`);
 
   return (
     <div className="h-screen bg-[#F1F5F9] flex flex-col items-center justify-center p-6 text-center">
@@ -38,25 +37,23 @@ const TelaBloqueio = ({ usuario, fazerLogout, MEU_WHATSAPP }) => {
         </h1>
         <p className="text-slate-400 mt-4 font-bold text-[11px] leading-relaxed uppercase tracking-widest">
           {isPendente 
-            ? "A tua conta foi criada com sucesso! Para começar a gerir o teu negócio, envia o comprovativo de pagamento para o nosso suporte."
-            : "Esta unidade encontra-se suspensa por falta de pagamento ou violação dos termos de uso no venda-japro.vercel.app."}
+            ? "A tua conta foi criada! Envia o comprovativo de pagamento para o nosso suporte para ativar a tua loja."
+            : "Esta unidade encontra-se suspensa por falta de pagamento ou violação dos termos."}
         </p>
         <div className="mt-10 space-y-4">
-          <a href={`https://wa.me/${MEU_WHATSAPP}?text=${msgWhatsapp}`} target="_blank" rel="noopener noreferrer" className="w-full bg-[#25D366] text-white p-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] hover:brightness-110 transition-all shadow-xl shadow-green-100 flex items-center justify-center gap-3">
-            <MessageCircle size={20} /> Enviar Comprovativo
+          <a href={`https://wa.me/${MEU_WHATSAPP}?text=${msgWhatsapp}`} target="_blank" rel="noopener noreferrer" className="w-full bg-[#25D366] text-white p-6 rounded-3xl font-black uppercase text-[10px] tracking-[0.2em] hover:brightness-110 transition-all shadow-xl flex items-center justify-center gap-3">
+            <MessageCircle size={20} /> Mandar Mensagem
           </a>
           <button onClick={fazerLogout} className="w-full text-slate-400 font-black text-[10px] uppercase p-4 hover:text-red-500 transition-colors flex items-center justify-center gap-2">
             <LogOut size={16} /> Sair da Conta
           </button>
         </div>
-        <p className="mt-8 text-[9px] font-bold text-slate-300 uppercase tracking-widest">ID da Unidade: {usuario?.uid}</p>
       </div>
     </div>
   );
 };
 
 function App() {
-  // Inicialização do estado via localStorage para evitar "flashing" de login
   const [usuario, setUsuario] = useState(() => {
     const salvo = localStorage.getItem('vendaJa_sessao');
     return salvo ? JSON.parse(salvo) : null;
@@ -70,29 +67,19 @@ function App() {
   const MEU_WHATSAPP = "258878296706";
 
   const fazerLogout = useCallback(() => {
+    auth.signOut();
+    localStorage.removeItem('vendaJa_sessao');
     setUsuario(null);
     setProdutos([]);
-    localStorage.removeItem('vendaJa_sessao');
-    auth.signOut();
   }, []);
 
   const fazerLogin = (dados) => {
-    setUsuario(dados);
     localStorage.setItem('vendaJa_sessao', JSON.stringify(dados));
+    setUsuario(dados);
   };
 
-  // VERIFICAÇÕES DE PODER REFORÇADAS
-  const isSuperAdmin = usuario?.email === "naironcossa.dev@gmail.com" || usuario?.role === 'superadmin';
-  // Ajuste na lógica de Admin para aceitar funcionários que não são donos mas estão logados
-  const isAdmin = usuario?.role === 'admin' || (usuario?.uid === usuario?.lojaId && usuario?.role !== 'caixa');
-
-  const [configLoja, setConfigLoja] = useState({
-    nuit: '', endereco: '', telefone: '', moeda: 'MT', mensagemRecibo: 'Obrigado!', logo: null
-  });
-
-  const avisar = (msg, tipo = "info") => {
-    console.log(`[${tipo.toUpperCase()}]: ${msg}`);
-  };
+  const isSuperAdmin = usuario?.role === 'superadmin' || usuario?.email === "naironcossa.dev@gmail.com";
+  const isAdmin = usuario?.role === 'admin';
 
   useEffect(() => {
     const handleStatus = () => setIsOnline(navigator.onLine);
@@ -104,76 +91,79 @@ function App() {
     };
   }, []);
 
-  // UPDATE: Verificação de Auth adaptada para sessões manuais (Funcionários)
+  // Monitor de Auth do Firebase
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      // Só desloga se NÃO houver user no Firebase E NÃO houver sessão manual no LocalStorage
-      if (!user && !localStorage.getItem('vendaJa_sessao')) {
+      // Se não há usuário no Auth e o que está no localStorage tem senha (é funcionário), não desloga
+      if (!user) {
+        const salvo = localStorage.getItem('vendaJa_sessao');
+        if (salvo) {
+          const dados = JSON.parse(salvo);
+          if (dados.password) return; // É funcionário, mantém logado
+        }
         fazerLogout();
       }
     });
     return () => unsubscribeAuth();
   }, [fazerLogout]);
 
-  // Sincronização do Perfil do Usuário
+  // Sincronização em tempo real do Perfil (CORRIGIDO)
   useEffect(() => {
+    // Se não há usuário logado, para o carregamento
     if (!usuario?.uid) {
       setCarregando(false);
       return;
     }
-    
-    // O ID do documento pode ser o UID (Dono) ou o Email (Funcionário)
-    // Buscamos pelo ID que está guardado no estado 'usuario'
-    const idParaBusca = usuario.email && usuario.role !== 'superadmin' ? usuario.email : usuario.uid;
 
-    const unsubUser = onSnapshot(doc(db, "usuarios", idParaBusca), (docSnap) => {
+    // A ID de busca no Firestore é SEMPRE o UID ou o Email salvo no login
+    const idParaDocumento = usuario.uid; 
+
+    const unsubUser = onSnapshot(doc(db, "usuarios", idParaDocumento), (docSnap) => {
       if (docSnap.exists()) {
-        const novosDados = { ...docSnap.data(), idFirestore: docSnap.id };
-        setUsuario(novosDados); 
-        localStorage.setItem('vendaJa_sessao', JSON.stringify(novosDados));
-      } else {
-        // Se o documento sumiu (ex: deletado), desloga
-        if (!isSuperAdmin) fazerLogout();
+        const dadosNovos = { ...docSnap.data(), uid: docSnap.id };
+        setUsuario(dadosNovos);
+        localStorage.setItem('vendaJa_sessao', JSON.stringify(dadosNovos));
+      } else if (!isSuperAdmin) {
+        // Se o documento foi deletado no banco, desloga
+        fazerLogout();
       }
       setCarregando(false);
-    }, (error) => {
-      console.error("Erro ao sincronizar usuário:", error);
+    }, (err) => {
+      console.error("Erro na sincronização:", err);
       setCarregando(false);
     });
-    
+
     return () => unsubUser();
-  }, [usuario?.uid, fazerLogout, isSuperAdmin]);
+  }, [usuario?.uid, isSuperAdmin, fazerLogout]);
 
-  // Sincronização das Configurações da Loja
+  const [configLoja, setConfigLoja] = useState({
+    moeda: 'MT', mensagemRecibo: 'Obrigado!', logoUrl: ''
+  });
+
+  // Sincronização de Configurações e Produtos
   useEffect(() => {
-    const targetId = usuario?.lojaId || usuario?.uid;
-    if (!targetId || (usuario?.status !== 'ativo' && !isSuperAdmin)) return;
+    const empresaId = usuario?.empresaId || usuario?.uid;
+    if (!empresaId || (usuario?.status !== 'ativo' && !isSuperAdmin)) return;
 
-    const unsubConfig = onSnapshot(doc(db, "configuracoes", targetId), (docSnap) => {
-      if (docSnap.exists()) {
-        setConfigLoja(docSnap.data());
-      }
+    // Configurações
+    const unsubConfig = onSnapshot(doc(db, "empresas", empresaId), (docSnap) => {
+      if (docSnap.exists()) setConfigLoja(docSnap.data());
     });
-    return () => unsubConfig();
-  }, [usuario?.lojaId, usuario?.uid, usuario?.status, isSuperAdmin]);
 
-  // Sincronização de Produtos
-  useEffect(() => {
-    const targetId = usuario?.lojaId || usuario?.uid;
-    if (!targetId || (usuario?.status !== 'ativo' && !isSuperAdmin)) return;
-
-    const q = query(collection(db, "produtos"), where("lojaId", "==", targetId));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setProdutos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    // Produtos
+    const q = query(collection(db, "produtos"), where("empresaId", "==", empresaId));
+    const unsubProd = onSnapshot(q, (snap) => {
+      setProdutos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    return () => unsubscribe(); 
-  }, [usuario?.lojaId, usuario?.uid, usuario?.status, isSuperAdmin]);
+
+    return () => { unsubConfig(); unsubProd(); };
+  }, [usuario?.empresaId, usuario?.uid, usuario?.status, isSuperAdmin]);
 
   if (carregando) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-white">
         <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.4em]">Sincronizando...</p>
+        <p className="mt-4 text-slate-400 font-black text-[9px] uppercase tracking-[0.4em]">Sincronizando Sistema...</p>
       </div>
     );
   }
@@ -194,11 +184,10 @@ function App() {
 
               <main className={usuario && (usuario.status === 'ativo' || isSuperAdmin) ? "max-w-7xl mx-auto w-full p-6 md:p-8" : "w-full"}>
                 <Routes>
-                  <Route path="/login" element={!usuario ? <Login aoLogar={fazerLogin} /> : (isSuperAdmin ? <Navigate to="/gestao-mestra" /> : <Navigate to="/" />)} />
-                  <Route path="/registo" element={!usuario ? <Registo setUsuario={fazerLogin} /> : <Navigate to="/" />} />
+                  <Route path="/login" element={!usuario ? <Login aoLogar={fazerLogin} /> : <Navigate to="/" />} />
+                  <Route path="/registo" element={!usuario ? <Registo /> : <Navigate to="/" />} />
                   <Route path="/gestao-mestra" element={isSuperAdmin ? <SuperAdmin /> : <Navigate to="/login" />} />
 
-                  {/* ROTA RAIZ: Dono vai para Dashboard, Funcionário vai para Caixa */}
                   <Route path="/" element={
                     usuario ? (
                       isSuperAdmin ? <Navigate to="/gestao-mestra" /> : (
@@ -209,17 +198,15 @@ function App() {
                     ) : <Navigate to="/login" />
                   } />
                   
-                  {/* ACESSOS GERAIS */}
-                  <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} /> : <Navigate to="/" />} />
                   <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
-                  <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
 
-                  {/* ACESSOS RESTRITOS (APENAS ADMIN) */}
                   <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
-                  <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Equipa usuario={usuario} avisar={avisar} /> : <Navigate to="/" />} />
-                  <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
+                  <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Definicoes usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
                   
-                  <Route path="*" element={<Navigate to={usuario ? (isSuperAdmin ? "/gestao-mestra" : "/") : "/login"} />} />
+                  <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
               </main>
               {mostrarFecho && <FechoCaixa usuario={usuario} fechar={() => setMostrarFecho(false)} />}

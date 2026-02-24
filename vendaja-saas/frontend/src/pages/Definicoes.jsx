@@ -12,12 +12,12 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
     nomeOficial: configLoja?.nomeOficial || '',
     nuit: configLoja?.nuit || '',
     telefone: configLoja?.telefone || '',
-    whatsapp: configLoja?.whatsapp || '', // NOVO
+    whatsapp: configLoja?.whatsapp || '',
     endereco: configLoja?.endereco || '',
     tipoNegocio: configLoja?.tipoNegocio || 'Geral',
     moeda: configLoja?.moeda || 'MT',
-    facebook: configLoja?.facebook || '', // NOVO
-    instagram: configLoja?.instagram || '', // NOVO
+    facebook: configLoja?.facebook || '',
+    instagram: configLoja?.instagram || '',
     // LOGÍSTICA
     slugLoja: configLoja?.slugLoja || '',
     fazEntrega: configLoja?.fazEntrega || false,
@@ -41,6 +41,8 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
   const [salvando, setSalvando] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Define o ID mestre da empresa
+  const empresaId = usuario?.empresaId || usuario?.uid;
   const isPremium = usuario?.plano === 'premium' || usuario?.role === 'superadmin';
 
   useEffect(() => {
@@ -71,43 +73,46 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         setDados({ ...dados, logo: canvas.toDataURL('image/jpeg', 0.8) });
         setCarregandoImagem(false);
-        avisar("LOGO ATUALIZADO", "sucesso");
+        avisar?.("LOGO ATUALIZADO", "sucesso");
       };
     };
     reader.readAsDataURL(file);
   };
 
   const salvarDefinicoes = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setSalvando(true);
     try {
       if (!dados.nuit || !dados.telefone || !dados.endereco || !dados.nomeOficial) {
-        avisar("PREENCHA OS DADOS ESSENCIAIS (Nome, NUIT, Telefone e Endereço)", "erro");
+        avisar?.("PREENCHA OS DADOS ESSENCIAIS (Nome, NUIT, Telefone e Endereço)", "erro");
         setSalvando(false);
         return;
       }
 
-      let finalSlug = dados.slugLoja || formatarSlug(usuario.nomeLoja);
+      let finalSlug = dados.slugLoja || formatarSlug(usuario.nomeLoja || "");
       if (isPremium && dados.slugLoja) {
         const qCheck = query(collection(db, "configuracoes"), where("slugLoja", "==", dados.slugLoja));
         const checkSnap = await getDocs(qCheck);
-        const existeOutro = checkSnap.docs.find(doc => doc.id !== usuario.uid);
+        const existeOutro = checkSnap.docs.find(doc => doc.id !== empresaId);
         if (existeOutro) {
-           avisar("LINK JÁ EM USO POR OUTRA LOJA", "erro");
+           avisar?.("LINK JÁ EM USO POR OUTRA LOJA", "erro");
            setSalvando(false);
            return;
         }
       }
 
-      await setDoc(doc(db, "configuracoes", usuario.uid), {
+      // Salva sempre no ID da empresa (Dono)
+      await setDoc(doc(db, "configuracoes", empresaId), {
         ...dados,
+        empresaId: empresaId, // Identificador unificado
         slugLoja: isPremium ? finalSlug : '',
         ultimaAtualizacao: new Date().toISOString()
       }, { merge: true });
 
-      avisar("SISTEMA ATUALIZADO!", "sucesso");
+      avisar?.("SISTEMA ATUALIZADO!", "sucesso");
     } catch (error) {
-      avisar("ERRO AO GUARDAR", "erro");
+      console.error(error);
+      avisar?.("ERRO AO GUARDAR", "erro");
     } finally {
       setSalvando(false);
     }

@@ -18,6 +18,9 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
   const [produtos, setProdutos] = useState([]);
 
   const isPremium = usuario?.plano === 'premium';
+  
+  // UPDATE: Garantia de ID único para isolamento de dados (Empresa vs Loja)
+  const empresaId = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
   const [novoProd, setNovoProd] = useState({
     nome: '', 
@@ -32,23 +35,13 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
     temIva: true
   });
 
-  // UPDATE: Resolução do problema do lojaId no Snapshot
   useEffect(() => {
-    // console.log("DEBUG - Usuário Logado:", usuario);
-    
-    // Define o ID alvo: Se for funcionário usa lojaId, se for dono usa o próprio uid
-    const targetLojaId = usuario?.lojaId || (usuario?.role === 'dono' || usuario?.role === 'admin' ? usuario?.uid : null);
-    
-    // console.log("DEBUG - Loja ID para busca:", targetLojaId);
+    if (!empresaId) return;
 
-    if (!targetLojaId) {
-      // console.warn("AVISO: Sem LojaID, a busca não será disparada.");
-      return;
-    }
-
+    // UPDATE: Padronização da busca para usar o identificador mestre da conta
     const q = query(
       collection(db, "produtos"),
-      where("lojaId", "==", targetLojaId),
+      where("lojaId", "==", empresaId),
       orderBy("nome")
     );
 
@@ -61,22 +54,20 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
     });
 
     return () => unsub();
-  }, [usuario, avisar]);
+  }, [empresaId, avisar]);
 
-  // MÉTRICAS FINANCEIRAS DO INVENTÁRIO
   const metricas = useMemo(() => {
     const totalItens = produtos.reduce((acc, p) => acc + Number(p.stock), 0);
     const valorCusto = produtos.reduce((acc, p) => acc + (Number(p.custo) * Number(p.stock)), 0);
     const valorVendaEstimado = produtos.reduce((acc, p) => acc + (Number(p.preco) * Number(p.stock)), 0);
-    const stockBaixo = produtos.filter(p => p.stock <= 5).length;
+    const stockBaixo = produtos.filter(p => Number(p.stock) <= 5).length;
 
     return { totalItens, valorCusto, valorVendaEstimado, stockBaixo, lucroPotencial: valorVendaEstimado - valorCusto };
   }, [produtos]);
 
   const salvarProduto = async (e) => {
     e.preventDefault();
-    const targetLojaId = usuario?.lojaId || usuario?.uid;
-    if (!targetLojaId) return;
+    if (!empresaId) return;
     
     setCarregando(true);
     const batch = writeBatch(db);
@@ -93,7 +84,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         fornecedor: novoProd.fornecedor.toUpperCase().trim(),
         temIva: novoProd.temIva,
         venderOnline: isPremium ? novoProd.venderOnline : false,
-        lojaId: targetLojaId,
+        lojaId: empresaId, // Mantém o vínculo correto
         atualizadoEm: serverTimestamp()
       };
 
@@ -105,7 +96,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         batch.set(novoProdRef, { ...dados, criadoEm: serverTimestamp() });
       }
 
-      batch.commit().catch(err => console.error("Erro de sincronização:", err));
+      await batch.commit();
 
       fecharModal();
       
@@ -161,12 +152,12 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
   );
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-8 pb-10 animate-in fade-in duration-500">
       
       {/* HEADER DINÂMICO */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
         <div>
-          <h2 className="text-4xl font-black uppercase flex items-center gap-3 italic">
+          <h2 className="text-4xl font-black uppercase flex items-center gap-3 italic tracking-tighter">
             <Package className="text-blue-600" size={35}/> Inventário
           </h2>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] mt-1">
@@ -182,21 +173,21 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
              <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Valor em Stock (Custo)</p>
-             <p className="text-2xl font-black text-slate-900 tabular-nums">{metricas.valorCusto.toFixed(2)} <small className="text-xs opacity-50">MT</small></p>
+             <p className="text-2xl font-black text-slate-900 tabular-nums">{metricas.valorCusto.toFixed(2)} <small className="text-xs opacity-50">{configLoja?.moeda || 'MT'}</small></p>
           </div>
           <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
              <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Lucro Potencial</p>
-             <p className="text-2xl font-black text-emerald-500 tabular-nums">+{metricas.lucroPotencial.toFixed(2)} <small className="text-xs opacity-50">MT</small></p>
+             <p className="text-2xl font-black text-emerald-500 tabular-nums">+{metricas.lucroPotencial.toFixed(2)} <small className="text-xs opacity-50">{configLoja?.moeda || 'MT'}</small></p>
           </div>
           <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
              <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Qtd Total Itens</p>
-             <p className="text-2xl font-black text-slate-900 tabular-nums">{metricas.totalItens} <small className="text-xs opacity-50">UN</small></p>
+             <p className="text-2xl font-black text-slate-900 tabular-nums">{metricas.totalItens} <small className="text-xs opacity-50 uppercase font-bold text-slate-300">Unidades</small></p>
           </div>
-          <div className={`p-6 rounded-[2rem] border shadow-sm transition-all ${metricas.stockBaixo > 0 ? 'bg-red-50 border-red-100 animate-pulse' : 'bg-white border-slate-100'}`}>
-             <p className="text-[10px] font-black text-red-400 uppercase mb-2 flex items-center gap-2">
+          <div className={`p-6 rounded-[2rem] border shadow-sm transition-all duration-500 ${metricas.stockBaixo > 0 ? 'bg-red-50 border-red-100' : 'bg-white border-slate-100'}`}>
+             <p className={`text-[10px] font-black uppercase mb-2 flex items-center gap-2 ${metricas.stockBaixo > 0 ? 'text-red-400' : 'text-slate-400'}`}>
                 <AlertTriangle size={12}/> Stock Crítico
              </p>
-             <p className={`text-2xl font-black ${metricas.stockBaixo > 0 ? 'text-red-600' : 'text-slate-300'}`}>
+             <p className={`text-2xl font-black ${metricas.stockBaixo > 0 ? 'text-red-600 animate-pulse' : 'text-slate-300'}`}>
                 {metricas.stockBaixo} <small className="text-xs opacity-50 uppercase">Avisos</small>
              </p>
           </div>
@@ -215,7 +206,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-900 text-[10px] uppercase text-slate-400 font-black tracking-widest">
+              <tr className="bg-slate-900 text-[10px] uppercase text-slate-400 font-black tracking-widest italic">
                 <th className="p-8">Ref / Fornecedor</th>
                 <th className="p-8">Produto</th>
                 <th className="p-8 text-center">Stock Físico</th>
@@ -241,20 +232,20 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
                       <div className="text-[10px] text-slate-400 italic line-clamp-1">{p.descricao || 'Nenhuma nota adicional registrada.'}</div>
                     </td>
                     <td className="p-8 text-center">
-                      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-xs ${p.stock <= 5 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}>
-                        {p.stock} {p.stock <= 5 && <AlertTriangle size={12}/>}
+                      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-xs ${Number(p.stock) <= 5 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}>
+                        {p.stock} {Number(p.stock) <= 5 && <AlertTriangle size={12}/>}
                       </div>
                     </td>
                     <td className="p-8 text-right font-bold text-slate-400 tabular-nums">{Number(p.custo || 0).toFixed(2)}</td>
                     <td className="p-8 text-right font-black text-slate-900 tabular-nums text-lg">{Number(p.preco).toFixed(2)}</td>
                     <td className="p-8 text-right">
-                        <div className="text-[10px] font-black text-emerald-600 uppercase">+{margem.toFixed(2)} MT</div>
+                        <div className="text-[10px] font-black text-emerald-600 uppercase">+{margem.toFixed(2)} {configLoja?.moeda || 'MT'}</div>
                         <div className="text-[9px] text-slate-300 font-bold">{percentagem.toFixed(0)}% Lucro</div>
                     </td>
                     <td className="p-8">
-                      <div className="flex justify-center gap-2">
-                        <button onClick={() => abrirEdicao(p)} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-2xl transition-all shadow-sm"><Edit3 size={18} /></button>
-                        <button onClick={() => deletarProduto(p.id)} className="p-3 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl transition-all shadow-sm"><Trash2 size={18} /></button>
+                      <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => abrirEdicao(p)} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Edit3 size={18} /></button>
+                        <button onClick={() => deletarProduto(p.id)} className="p-3 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -280,7 +271,6 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
-              {/* NOME E DESCRIÇÃO */}
               <div className="md:col-span-4 space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-400 ml-4">Nome do Artigo / Modelo</label>
                 <input required placeholder="Ex: IPHONE 15 PRO MAX 256GB"
@@ -291,7 +281,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
               <div className="md:col-span-2 space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-400 ml-4">Referência / SKU</label>
                 <input placeholder="REF-2024-X"
-                  className="w-full p-5 border-2 border-slate-50 rounded-3xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-mono font-bold text-blue-600"
+                  className="w-full p-5 border-2 border-slate-50 rounded-3xl bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-mono font-bold text-blue-600 uppercase"
                   value={novoProd.referencia} onChange={e => setNovoProd({ ...novoProd, referencia: e.target.value })} />
               </div>
 
@@ -302,7 +292,6 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
                   value={novoProd.descricao} onChange={e => setNovoProd({ ...novoProd, descricao: e.target.value })} />
               </div>
 
-              {/* FORNECEDOR E STOCK */}
               <div className="md:col-span-3 space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-400 ml-4 flex items-center gap-1"><Truck size={12}/> Nome do Fornecedor</label>
                 <input placeholder="Ex: APPLE MOZAMBIQUE"
@@ -317,7 +306,6 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
                   value={novoProd.stock} onChange={e => setNovoProd({ ...novoProd, stock: e.target.value })} />
               </div>
 
-              {/* FINANCEIRO */}
               <div className="md:col-span-3 p-6 bg-slate-900 rounded-[2.5rem] space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-500 ml-2">Preço de Compra (Custo)</label>
                 <div className="relative">
@@ -339,12 +327,11 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
               </div>
             </div>
 
-            {/* IVA */}
             <div className="flex items-center justify-between p-6 bg-emerald-50 rounded-[2rem] border-2 border-emerald-100">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm"><Receipt/></div>
                     <div>
-                        <p className="text-xs font-black uppercase text-emerald-900">Taxar IVA (16%)</p>
+                        <p className="text-xs font-black uppercase text-emerald-900">Taxar IVA ({configLoja?.ivaPercent || 16}%)</p>
                         <p className="text-[10px] font-bold text-emerald-600 uppercase">Incluir imposto no preço final de venda</p>
                     </div>
                 </div>
