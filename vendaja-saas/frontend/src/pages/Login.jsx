@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, db } from '../firebase';
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import {
   Store, Mail, ArrowRight, ShieldCheck, Loader2,
   Lock, Eye, EyeOff, AlertCircle
@@ -26,37 +26,36 @@ const Login = ({ aoLogar }) => {
 
     try {
       /* ============================================================
-         1. FLUXO DE FUNCIONÁRIO (Custom Login - Firestore)
-         Verificamos primeiro no banco de dados para evitar erros de 
-         auth caso o email não esteja no Firebase Authentication.
+         1. FLUXO DE FUNCIONÁRIO (Busca Direta por ID/Email)
+         Como o ID do documento agora é o próprio email, usamos getDoc.
       ============================================================ */
-      const q = query(
-        collection(db, "usuarios"), 
-        where("email", "==", emailLimpo),
-        where("password", "==", password)
-      );
+      const docRef = doc(db, "usuarios", emailLimpo);
+      const docSnap = await getDoc(docRef);
 
-      const querySnapshot = await getDocs(q);
+      if (docSnap.exists()) {
+        const dadosUsuario = docSnap.data();
 
-      if (!querySnapshot.empty) {
-        const docUser = querySnapshot.docs[0];
-        const dadosUsuario = docUser.data();
+        // Verifica se a senha manual (campo password no Firestore) coincide
+        if (dadosUsuario.password === password) {
+          if (dadosUsuario.status === 'suspenso') {
+            setErro("ACESSO SUSPENSO PELO ADMINISTRADOR.");
+            setCarregando(false);
+            return;
+          }
 
-        if (dadosUsuario.status === 'suspenso') {
-          setErro("ACESSO SUSPENSO PELO ADMINISTRADOR.");
-          setCarregando(false);
+          // Login de funcionário bem-sucedido
+          aoLogar({ uid: docSnap.id, ...dadosUsuario });
+          navigate('/');
           return;
         }
-
-        // Login de funcionário bem-sucedido
-        aoLogar({ uid: docUser.id, ...dadosUsuario });
-        navigate('/');
-        return;
+        // Se o documento existe mas a senha está errada, podemos optar por
+        // continuar para o Auth (caso seja um Admin com senha diferente) 
+        // ou barrar logo aqui. O código abaixo segue para o Auth oficial.
       }
 
       /* ============================================================
          2. TENTATIVA AUTH FIREBASE (Para Donos / Master Admin)
-         Se não encontrou no Firestore manual, tenta o Auth oficial.
+         Se não logou como funcionário, tenta a autenticação oficial.
       ============================================================ */
       try {
         const userCredential = await signInWithEmailAndPassword(auth, emailLimpo, password);
@@ -75,10 +74,10 @@ const Login = ({ aoLogar }) => {
           return;
         }
 
-        // Buscar dados do Dono no Firestore após Auth bem-sucedido
-        const docSnap = await getDoc(doc(db, "usuarios", user.uid));
-        if (docSnap.exists()) {
-          const dados = docSnap.data();
+        // Buscar dados do Dono no Firestore usando o UID do Firebase Auth
+        const donoSnap = await getDoc(doc(db, "usuarios", user.uid));
+        if (donoSnap.exists()) {
+          const dados = donoSnap.data();
           if (dados.status === 'suspenso') {
             setErro("CONTA SUSPENSA. CONTACTE O SUPORTE.");
             return;
@@ -91,14 +90,13 @@ const Login = ({ aoLogar }) => {
 
       } catch (authErr) {
         console.error("Auth Error Code:", authErr.code);
-        // Tratamento de erro unificado para evitar vazamento de info
         setErro("CREDENCIAIS INVÁLIDAS");
       }
 
     } catch (err) {
       console.error("Erro Geral de Login:", err);
       if (err.message.includes("permission-denied")) {
-        setErro("ERRO DE PERMISSÃO: VERIFIQUE AS REGRAS DO FIREBASE.");
+        setErro("ERRO DE PERMISSÃO: CONTACTE O ADMINISTRADOR.");
       } else {
         setErro("FALHA NA AUTENTICAÇÃO. TENTE NOVAMENTE.");
       }
@@ -205,7 +203,6 @@ const Login = ({ aoLogar }) => {
               )}
             </button>
 
-            {/* LINK DE REGISTO */}
             <div className="text-center pt-8 border-t border-slate-50">
               <Link to="/registo" className="text-blue-600 font-black text-xs uppercase hover:underline">
                 Criar Nova Conta de Loja

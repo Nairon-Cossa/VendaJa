@@ -16,7 +16,7 @@ const Equipa = ({ usuario, avisar }) => {
     nome: '',
     email: '',
     telemovel: '',
-    password: '', // Campo para senha manual
+    password: '', 
     role: 'caixa'
   });
 
@@ -32,10 +32,11 @@ const Equipa = ({ usuario, avisar }) => {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const lista = snapshot.docs.map(doc => ({
-        id: doc.id,
+        id: doc.id, // O ID aqui será o email ou o UID do admin
         ...doc.data()
       }));
-      setMembros(lista.filter(m => m.uid !== usuario.uid));
+      // Filtra para não mostrar o próprio usuário logado na lista da equipa
+      setMembros(lista.filter(m => m.email !== usuario.email));
       setCarregando(false);
     }, (error) => {
       console.error(error);
@@ -45,14 +46,24 @@ const Equipa = ({ usuario, avisar }) => {
     return () => unsubscribe();
   }, [usuario, avisar]);
 
-  // 2. Função para Adicionar Membro
+  // 2. Função para Adicionar Membro (USANDO EMAIL COMO ID)
   const adicionarMembro = async (e) => {
     e.preventDefault();
     setSalvando(true);
 
     try {
       const meuLojaId = usuario?.lojaId || usuario?.uid;
+      const emailId = novoMembro.email.toLowerCase().trim(); // O ID será o email
 
+      // Verificar se este email já existe para evitar sobreposição
+      const docExistente = await getDoc(doc(db, "usuarios", emailId));
+      if (docExistente.exists()) {
+        avisar("ESTE E-MAIL JÁ ESTÁ REGISTADO NO SISTEMA.", "erro");
+        setSalvando(false);
+        return;
+      }
+
+      // Verificação de Limite de Plano
       const lojaRef = doc(db, "usuarios", meuLojaId);
       const lojaSnap = await getDoc(lojaRef);
       const dadosLoja = lojaSnap.data();
@@ -66,14 +77,14 @@ const Equipa = ({ usuario, avisar }) => {
         return;
       }
 
-      const idGerado = `FUNC_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      const idFunc = `FUNC_${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
       
       const dadosFuncionario = {
-        uid: idGerado,
+        uid: idFunc, // UID interno para referência
         nome: novoMembro.nome || '',
-        email: novoMembro.email.toLowerCase().trim() || '',
+        email: emailId,
         telemovel: novoMembro.telemovel || '',
-        password: novoMembro.password || idGerado, // Senha manual ou o ID como fallback
+        password: novoMembro.password || idFunc,
         role: novoMembro.role || 'caixa',
         lojaId: meuLojaId || '',
         nomeLoja: usuario.nomeLoja || 'Minha Loja',
@@ -82,7 +93,8 @@ const Equipa = ({ usuario, avisar }) => {
         createdAt: new Date().toISOString()
       };
 
-      await setDoc(doc(db, "usuarios", idGerado), dadosFuncionario);
+      // GRAVAÇÃO CRUCIAL: Usamos emailId (o email) como a chave do documento
+      await setDoc(doc(db, "usuarios", emailId), dadosFuncionario);
       
       setMostrarModal(false);
       setNovoMembro({ nome: '', email: '', telemovel: '', password: '', role: 'caixa' });
@@ -158,7 +170,6 @@ const Equipa = ({ usuario, avisar }) => {
               <div className="space-y-1">
                 <h3 className="font-black text-slate-900 uppercase text-lg italic tracking-tight">{membro.nome}</h3>
                 <p className="text-xs font-bold text-slate-400 truncate">{membro.email}</p>
-                {/* Exibição da Senha para o Admin */}
                 <div className="mt-4 flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-dashed border-slate-200">
                   <Lock size={12} className="text-slate-400" />
                   <span className="text-[10px] font-mono font-bold text-slate-600">Senha: {membro.password}</span>
@@ -191,7 +202,7 @@ const Equipa = ({ usuario, avisar }) => {
               <input 
                 required 
                 placeholder="Nome do Funcionário"
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
                 value={novoMembro.nome} 
                 onChange={e => setNovoMembro({...novoMembro, nome: e.target.value})} 
               />
@@ -200,7 +211,7 @@ const Equipa = ({ usuario, avisar }) => {
                 required 
                 type="email" 
                 placeholder="E-mail de Login"
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
                 value={novoMembro.email} 
                 onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
               />
@@ -210,7 +221,7 @@ const Equipa = ({ usuario, avisar }) => {
                   required 
                   type="text"
                   placeholder="Definir Senha de Acesso"
-                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all pr-12" 
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all pr-12 text-slate-900" 
                   value={novoMembro.password} 
                   onChange={e => setNovoMembro({...novoMembro, password: e.target.value})} 
                 />
@@ -219,13 +230,13 @@ const Equipa = ({ usuario, avisar }) => {
 
               <input 
                 placeholder="Telemóvel (Opcional)"
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
                 value={novoMembro.telemovel} 
                 onChange={e => setNovoMembro({...novoMembro, telemovel: e.target.value})} 
               />
 
               <select 
-                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none"
+                className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none text-slate-900"
                 value={novoMembro.role} 
                 onChange={e => setNovoMembro({...novoMembro, role: e.target.value})}
               >
