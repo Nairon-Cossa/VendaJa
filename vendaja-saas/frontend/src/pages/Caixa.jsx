@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { db } from '../firebase'; 
-import { collection, doc, increment, serverTimestamp, writeBatch, addDoc } from "firebase/firestore";
+import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
   Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Clock, 
-  CreditCard, Building2, Percent, Calculator, User, ShoppingBag, AlertTriangle
+  CreditCard, Building2, User, ShoppingBag
 } from 'lucide-react';
 import ReciboA4 from '../components/ReciboA4';
 
@@ -31,7 +31,6 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const [referencia, setReferencia] = useState('');
   const [desconto, setDesconto] = useState('');
   const [aplicarIva, setAplicarIva] = useState(false);
-  const [valorRecebido, setValorRecebido] = useState(''); 
   const [nomeCliente, setNomeCliente] = useState('');
   const [nuitCliente, setNuitCliente] = useState('');
   const [enderecoCliente, setEnderecoCliente] = useState('');
@@ -77,10 +76,9 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
     }
   };
 
-  const finalizarVenda = async () => {
+  const finalizarVenda = () => {
     if (carrinho.length === 0 || carregando) return;
     
-    // Validação de Fiado
     if (metodo === 'Dívida (Fiado)' && !nomeCliente) {
         avisar("NOME DO CLIENTE OBRIGATÓRIO PARA FIADO", "erro");
         return;
@@ -122,12 +120,13 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
         timestamp: serverTimestamp()
       };
 
+      // Adicionar venda ao batch
       batch.set(vendaRef, dadosVenda);
 
-      // Se for Fiado, criar registo na coleção de fiados
+      // Se for Fiado, adicionar ao batch (usando set em vez de addDoc para ser offline-ready)
       if (metodo === 'Dívida (Fiado)') {
-        const fiadoRef = collection(db, "fiados");
-        await addDoc(fiadoRef, {
+        const fiadoRef = doc(collection(db, "fiados"));
+        batch.set(fiadoRef, {
             lojaId: usuario.lojaId,
             vendaId: vendaRef.id,
             clienteNome: nomeCliente.toUpperCase(),
@@ -138,17 +137,27 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
         });
       }
 
+      // Atualizar stocks no batch
       carrinho.forEach(item => {
         const produtoRef = doc(db, "produtos", item.id);
         batch.update(produtoRef, { stock: increment(-item.qtd) });
       });
 
-      await batch.commit();
+      // EXECUTAR BATCH (Sem await para permitir funcionamento offline imediato)
+      batch.commit().catch(err => console.error("Erro ao sincronizar:", err));
+
+      // Feedback e Limpeza da UI
       setVendaFinalizada(dadosVenda);
-      avisar("VENDA REGISTADA!", "sucesso");
+      
+      if (navigator.onLine) {
+        avisar("VENDA REGISTADA!", "sucesso");
+      } else {
+        avisar("GUARDADO LOCALMENTE (OFFLINE)", "aviso");
+      }
+
     } catch (error) {
       console.error(error);
-      avisar("ERRO AO SALVAR", "erro");
+      avisar("ERRO NO PROCESSAMENTO", "erro");
     } finally {
       setCarregando(false);
     }
@@ -199,10 +208,8 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           </div>
         </div>
 
-        {/* CARRINHO (LARGURA FIXA E SCROLL INDEPENDENTE) */}
+        {/* CARRINHO */}
         <div className="w-full lg:w-[420px] bg-white rounded-[2rem] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
-          
-          {/* CLIENTE */}
           <div className="p-5 bg-slate-50 border-b">
             <div className="flex items-center gap-2 mb-3">
                <User size={14} className="text-blue-600" />
@@ -232,7 +239,6 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
             </div>
           </div>
 
-          {/* ITENS */}
           <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-white">
             {carrinho.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-slate-200 grayscale opacity-50">

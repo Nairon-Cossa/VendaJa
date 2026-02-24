@@ -87,6 +87,7 @@ function App() {
   });
 
   const avisar = (msg, tipo = "info") => {
+    // Aqui podes integrar com um Toast futuramente, por agora mantém o log
     console.log(`[${tipo.toUpperCase()}]: ${msg}`);
   };
 
@@ -103,8 +104,7 @@ function App() {
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (!user) {
-        // Apenas limpa o estado se não houver persistência manual
-        // mas mantemos o fazerLogout para consistência
+        // Lógica de limpeza se necessário
       }
     });
     return () => unsubscribeAuth();
@@ -165,7 +165,7 @@ function App() {
     <Router>
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
         <Routes>
-          {/* ROTAS PÚBLICAS E DE RECUPERAÇÃO - FORA DO FLUXO PRINCIPAL */}
+          {/* ROTAS PÚBLICAS E DE RECUPERAÇÃO */}
           <Route path="/loja/:slug" element={<LojaPublica />} />
           <Route path="/redefinir-senha" element={<RedefinirSenha />} />
           <Route path="/recuperar-senha" element={<RecuperarSenha />} />
@@ -194,7 +194,10 @@ function App() {
                   
                   <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
                   <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
-                  <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
+                  
+                  {/* UPDATE AQUI: Adicionado a prop avisar para o componente Equipa */}
+                  <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Equipa usuario={usuario} avisar={avisar} /> : <Navigate to="/" />} />
+                  
                   <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
                   <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
                   <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && usuario?.role === 'admin' ? <Definicoes usuario={usuario} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />

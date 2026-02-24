@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import {
-  collection, addDoc, updateDoc, doc,
-  deleteDoc, serverTimestamp,
-  onSnapshot, query, where, orderBy
+  collection, doc, deleteDoc, serverTimestamp,
+  onSnapshot, query, where, orderBy, writeBatch
 } from "firebase/firestore";
 import {
   Plus, Search, Edit3, Trash2,
-  Package, Filter, X, Loader2,
-  TrendingUp, DollarSign, Hash, Globe, Crown, FileText, Truck, Receipt, AlertTriangle, ArrowDown
+  Package, X, Loader2,
+  DollarSign, FileText, Truck, Receipt, AlertTriangle
 } from 'lucide-react';
 
 const Inventario = ({ usuario, avisar, configLoja }) => {
@@ -63,7 +62,10 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
   const salvarProduto = async (e) => {
     e.preventDefault();
     if (!usuario?.lojaId) return;
+    
     setCarregando(true);
+    const batch = writeBatch(db);
+    
     try {
       const dados = {
         nome: novoProd.nome.toUpperCase().trim(),
@@ -81,15 +83,30 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
       };
 
       if (produtoEditando) {
-        await updateDoc(doc(db, "produtos", produtoEditando.id), dados);
+        const prodRef = doc(db, "produtos", produtoEditando.id);
+        batch.update(prodRef, dados);
       } else {
-        await addDoc(collection(db, "produtos"), { ...dados, criadoEm: serverTimestamp() });
+        const novoProdRef = doc(collection(db, "produtos"));
+        batch.set(novoProdRef, { ...dados, criadoEm: serverTimestamp() });
       }
+
+      // Executa o batch (Firebase trata o enfileiramento se estiver offline)
+      batch.commit().catch(err => console.error("Erro de sincronização:", err));
+
       fecharModal();
-      avisar?.("PRODUTO GUARDADO COM SUCESSO", "sucesso");
+      
+      if (navigator.onLine) {
+        avisar?.("PRODUTO GUARDADO COM SUCESSO", "sucesso");
+      } else {
+        avisar?.("GUARDADO LOCALMENTE (MODO OFFLINE)", "aviso");
+      }
+
     } catch (err) {
+      console.error(err);
       avisar?.("ERRO AO GUARDAR PRODUTO", "erro");
-    } finally { setCarregando(false); }
+    } finally { 
+      setCarregando(false); 
+    }
   };
 
   const deletarProduto = async (id) => {
@@ -97,7 +114,9 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
     try {
       await deleteDoc(doc(db, "produtos", id));
       avisar?.("PRODUTO ELIMINADO", "sucesso");
-    } catch { avisar?.("ERRO AO ELIMINAR", "erro"); }
+    } catch { 
+      avisar?.("ERRO AO ELIMINAR", "erro"); 
+    }
   };
 
   const abrirEdicao = (p) => {

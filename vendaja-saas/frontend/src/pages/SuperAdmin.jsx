@@ -4,7 +4,7 @@ import { collection, getDocs, doc, updateDoc, getDoc, deleteDoc } from "firebase
 import { 
   Loader2, Search, ShieldCheck, KeyRound, Eye, EyeOff, TrendingUp, 
   ShoppingBag, Store, Users, AlertCircle, CheckCircle2, DollarSign, Activity, Globe,
-  Zap, Crown, Trash2
+  Zap, Crown, Trash2, UserPlus
 } from 'lucide-react';
 
 const SuperAdmin = () => {
@@ -113,33 +113,29 @@ const SuperAdmin = () => {
     } catch (error) { alert("FALHA NA OPERAÇÃO."); }
   };
 
-  const alterarPlano = async (uid, planoAtual) => {
-    const novoPlano = planoAtual === 'premium' ? 'basico' : 'premium';
-    if (!window.confirm(`ALTERAR PLANO PARA ${novoPlano.toUpperCase()}?`)) return;
+  // NOVA LÓGICA DE PLANOS ATUALIZADA
+  const setNivelPlano = async (uid, planoNivel, maxUsers) => {
+    if (!window.confirm(`ALTERAR ESTA UNIDADE PARA O PLANO ${planoNivel}? (Limite: ${maxUsers} usuários)`)) return;
     try {
-      await updateDoc(doc(db, "usuarios", uid), { plano: novoPlano });
-      setClientes(clientes.map(c => c.id === uid ? { ...c, plano: novoPlano } : c));
+      await updateDoc(doc(db, "usuarios", uid), { 
+        plano: planoNivel,
+        maxUsers: maxUsers
+      });
+      setClientes(clientes.map(c => c.id === uid ? { ...c, plano: planoNivel, maxUsers: maxUsers } : c));
     } catch (error) { alert("FALHA AO ALTERAR PLANO."); }
   };
 
-  // NOVA FUNÇÃO: Apagar Conta
   const apagarConta = async (uid, statusAtual) => {
     if (!window.confirm("ALERTA CRÍTICO: Tem a certeza absoluta que deseja APAGAR esta unidade? Esta ação é irreversível e removerá os dados da base de dados.")) return;
     
     try {
-      // Remove o documento do Firestore
       await deleteDoc(doc(db, "usuarios", uid));
-      
-      // Atualiza o estado local para remover a loja da lista
       setClientes(clientes.filter(c => c.id !== uid));
-      
-      // Atualiza as métricas
       setMetricas(prev => ({
         ...prev,
         totalLojas: prev.totalLojas - 1,
         lojasAtivas: statusAtual === 'ativo' ? prev.lojasAtivas - 1 : prev.lojasAtivas
       }));
-      
     } catch (error) {
       console.error("Erro ao apagar conta:", error);
       alert("FALHA AO APAGAR A CONTA.");
@@ -254,21 +250,20 @@ const SuperAdmin = () => {
               ).map((cliente) => {
                 const fin = faturamentos[cliente.lojaId] || { total: 0, qtdVendas: 0 };
                 const isAtivo = cliente.status === 'ativo';
-                const isPremium = cliente.plano === 'premium';
-
+                
                 return (
                   <div key={cliente.id} className="bg-white border border-slate-100 rounded-[3rem] p-6 pr-10 shadow-sm flex flex-col lg:flex-row items-center justify-between gap-8 hover:border-blue-200 transition-all group relative overflow-hidden">
                     <div className={`absolute left-0 top-0 bottom-0 w-2 ${isAtivo ? 'bg-emerald-500' : 'bg-red-500'}`} />
                     
                     <div className="flex items-center gap-6 flex-1 w-full">
                       <div className={`w-16 h-16 rounded-[1.8rem] flex items-center justify-center text-white shadow-xl ${isAtivo ? 'bg-emerald-500 shadow-emerald-100' : 'bg-red-500 shadow-red-100'}`}>
-                        {isPremium ? <Crown size={28} /> : <Store size={28} />}
+                        {cliente.plano === 'Plano 4' ? <Crown size={28} /> : <Store size={28} />}
                       </div>
                       <div className="space-y-1">
                         <div className="flex items-center gap-3">
                           <h3 className="font-black text-slate-900 uppercase italic text-lg tracking-tighter">{cliente.nomeLoja || 'Sem Nome'}</h3>
                           {!isAtivo && <span className="bg-red-50 text-red-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-red-100">Unidade Suspensa</span>}
-                          {isPremium && <span className="bg-amber-100 text-amber-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-amber-200">Premium</span>}
+                          {cliente.plano && <span className="bg-blue-50 text-blue-600 text-[8px] font-black px-2 py-1 rounded-md uppercase tracking-tighter border border-blue-100">{cliente.plano} ({cliente.maxUsers} users)</span>}
                         </div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{cliente.email} • ID: <span className="text-slate-600">{cliente.lojaId}</span></p>
                       </div>
@@ -285,37 +280,46 @@ const SuperAdmin = () => {
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-3 w-full lg:w-auto">
-                      <button 
-                        onClick={() => alterarPlano(cliente.id, cliente.plano)}
-                        className={`flex-1 lg:w-40 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
-                          isPremium 
-                          ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:scale-105 shadow-amber-200' 
-                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                        }`}
-                      >
-                        {isPremium ? <Crown size={14} /> : <Zap size={14} />}
-                        {isPremium ? 'Premium' : '+ Premium'}
-                      </button>
+                    {/* INTERFACE DE PLANOS ATUALIZADA */}
+                    <div className="flex flex-wrap gap-2 w-full lg:w-auto bg-slate-50 p-3 rounded-[2rem] border border-slate-100">
+                      {[
+                        { n: 'P1', u: 1, label: 'Mercearia' },
+                        { n: 'P2', u: 5, label: 'Média' },
+                        { n: 'P3', u: 10, label: 'Empresa' },
+                        { n: 'P4', u: 999, label: 'Custom' }
+                      ].map((p) => (
+                        <button 
+                          key={p.n}
+                          onClick={() => setNivelPlano(cliente.id, `Plano ${p.n.at(-1)}`, p.u)}
+                          className={`px-3 py-2 rounded-xl font-black text-[9px] uppercase transition-all flex flex-col items-center justify-center min-w-[60px] ${
+                            cliente.plano === `Plano ${p.n.at(-1)}` 
+                            ? 'bg-blue-600 text-white shadow-md' 
+                            : 'bg-white text-slate-400 hover:text-blue-600 border border-slate-200'
+                          }`}
+                        >
+                          <span>{p.n}</span>
+                          <span className="opacity-60 text-[7px]">{p.u > 50 ? '∞' : p.u}U</span>
+                        </button>
+                      ))}
+                    </div>
 
+                    <div className="flex gap-2">
                       <button 
                         onClick={() => alterarStatus(cliente.id, cliente.status)}
-                        className={`flex-1 lg:w-36 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 ${
+                        className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${
                           isAtivo 
-                          ? 'bg-white text-red-500 border border-red-100 hover:bg-red-500 hover:text-white' 
+                          ? 'bg-white text-red-500 border border-red-100 hover:bg-red-50' 
                           : 'bg-emerald-500 text-white hover:bg-emerald-600'
                         }`}
                       >
-                        {isAtivo ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
-                        {isAtivo ? 'Suspender' : 'Reativar'}
+                        {isAtivo ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
                       </button>
 
                       <button 
                         onClick={() => apagarConta(cliente.id, cliente.status)}
-                        title="Apagar permanentemente"
-                        className="w-full lg:w-16 py-5 rounded-[1.5rem] text-red-500 bg-red-50 hover:bg-red-600 hover:text-white transition-all shadow-sm flex items-center justify-center border border-red-100"
+                        className="w-12 h-12 rounded-2xl text-red-500 bg-red-50 hover:bg-red-600 hover:text-white transition-all shadow-sm flex items-center justify-center border border-red-100"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={18} />
                       </button>
                     </div>
                   </div>

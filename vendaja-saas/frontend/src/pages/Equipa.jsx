@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { 
   Users, UserPlus, Trash2, Shield, 
   UserCircle, Mail, Phone, Loader2, X, AlertCircle
@@ -45,12 +45,27 @@ const Equipa = ({ usuario, avisar }) => {
     return () => unsubscribe();
   }, [usuario, avisar]);
 
-  // 2. Função para Adicionar Membro
+  // 2. Função para Adicionar Membro (COM LÓGICA DE LIMITE DE PLANO)
   const adicionarMembro = async (e) => {
     e.preventDefault();
     setSalvando(true);
 
     try {
+      // --- VERIFICAÇÃO DE LIMITE DE PLANO ---
+      // Buscamos os dados mais recentes do dono/loja para verificar o maxUsers
+      const lojaDoc = await getDoc(doc(db, "usuarios", usuario.lojaId));
+      const dadosPlan = lojaDoc.data();
+      
+      const limitePermitido = dadosPlan?.maxUsers || 1; // Padrão é 1 se não definido
+      const totalAtual = membros.length + 1; // +1 inclui o administrador/dono
+
+      if (totalAtual >= limitePermitido) {
+        avisar(`LIMITE ATINGIDO: O seu plano (${dadosPlan?.plano || 'Básico'}) permite apenas ${limitePermitido} usuários no total.`, "erro");
+        setSalvando(false);
+        return;
+      }
+      // --- FIM DA VERIFICAÇÃO ---
+
       const idGerado = `FUNC_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       
       const dadosFuncionario = {
@@ -81,7 +96,6 @@ const Equipa = ({ usuario, avisar }) => {
 
   // 3. Função para Remover Membro
   const removerMembro = async (id, nome) => {
-    // Usamos um confirm simples por enquanto, mas integrado com o avisar pós-acção
     if (window.confirm(`Tens a certeza que desejas revogar o acesso de ${nome}?`)) {
       try {
         await deleteDoc(doc(db, "usuarios", id));
@@ -238,10 +252,11 @@ const Equipa = ({ usuario, avisar }) => {
               </div>
 
               <button 
+                type="submit"
                 disabled={salvando} 
                 className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black mt-4 flex items-center justify-center gap-3 hover:bg-blue-600 transition-all shadow-xl shadow-blue-100 disabled:opacity-50"
               >
-                {salvando ? <Loader2 className="animate-spin" /> : <><UserPlus size={18}/> CONFIRMAR ACESSO</>}
+                {salvando ? <Loader2 className="animate-spin" size={18} /> : <><UserPlus size={18}/> CONFIRMAR ACESSO</>}
               </button>
             </form>
           </div>

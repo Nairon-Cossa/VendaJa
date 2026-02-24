@@ -9,7 +9,7 @@ import { auth, db, storage } from '../firebase';
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { useNavigate } from 'react-router-dom'; // Adicionado para navegação
+import { useNavigate } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
 
 const TIPOS_NEGOCIO = [
@@ -23,7 +23,7 @@ const TIPOS_NEGOCIO = [
   { id: 'Geral/Loja', label: 'Outro tipo de Loja', icon: <Briefcase size={20} />, color: 'bg-slate-500' },
 ];
 
-const Registo = () => { // Removido setUsuario pois a conta fica pendente
+const Registo = () => { 
   const navigate = useNavigate();
   const [passo, setPasso] = useState(1);
   const [carregando, setCarregando] = useState(false);
@@ -109,32 +109,37 @@ const Registo = () => { // Removido setUsuario pois a conta fica pendente
         urlFinalLogo = await getDownloadURL(uploadSnapshot.ref);
       }
 
-      const lojaId = user.uid;
+      // NOVO FLUXO DE MULTI-TENANCY: Usamos o UID do dono como ID da Empresa
+      const empresaId = user.uid;
 
-      await setDoc(doc(db, "usuarios", user.uid), {
-        uid: user.uid,
-        nome: dados.nome,
-        email: dados.email,
-        telemovel: dados.telemovel,
-        nomeLoja: dados.nomeLoja,
-        tipoNegocio: dados.tipoNegocio,
-        role: 'admin',
-        lojaId: lojaId,
-        status: 'pendente', 
-        criadoEm: serverTimestamp()
-      });
-
-      await setDoc(doc(db, "configuracoes", lojaId), {
-        lojaId: lojaId,
+      // 1. Criar o documento central da EMPRESA
+      await setDoc(doc(db, "empresas", empresaId), {
+        empresaId: empresaId,
         nome: dados.nomeLoja,
+        tipoNegocio: dados.tipoNegocio,
         logoUrl: urlFinalLogo,
         moeda: 'MT',
         telefone: dados.telemovel,
+        emailResponsavel: dados.email,
+        status: 'pendente',
+        donoUid: user.uid,
         configurado: true,
         criadoEm: serverTimestamp()
       });
 
-      // Importante: Deslogar imediatamente para que o App.js não tente entrar na Dashboard
+      // 2. Criar o documento do USUÁRIO associando-o ao empresaId
+      await setDoc(doc(db, "usuarios", user.uid), {
+        uid: user.uid,
+        empresaId: empresaId, // <- A chave que vai isolar os dados!
+        nome: dados.nome,
+        email: dados.email,
+        telemovel: dados.telemovel,
+        role: 'admin',
+        status: 'pendente', 
+        criadoEm: serverTimestamp()
+      });
+
+      // Deslogar imediatamente para que o App.js não tente entrar na Dashboard
       await signOut(auth);
       setSucessoVerificacao(true);
       
@@ -180,7 +185,6 @@ const Registo = () => { // Removido setUsuario pois a conta fica pendente
               <MessageCircle size={18} /> Mandar Comprovativo
             </a>
             
-            {/* BOTÃO CORRIGIDO: Agora leva para o Login em vez de voltar para o Registo */}
             <button 
                 onClick={() => navigate('/login')} 
                 className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-600 transition-colors flex items-center justify-center gap-2 mx-auto"
