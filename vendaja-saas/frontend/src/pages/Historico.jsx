@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Search, Printer, TrendingUp, Clock, 
-  Download, Package, BarChart3, ChevronDown
+  Download, Package, BarChart3
 } from 'lucide-react';
 import Recibo from '../components/ReciboA4';
 
@@ -16,18 +16,15 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
   const [carregando, setCarregando] = useState(true);
   const [vendaParaReimprimir, setVendaParaReimprimir] = useState(null);
   
-  // Estados para Filtros Avançados
   const [filtroMetodo, setFiltroMetodo] = useState('Todos');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
 
-  // ID da empresa para garantir isolamento de dados
   const empresaId = usuario?.empresaId || usuario?.uid;
 
   useEffect(() => {
     if (!empresaId) return;
 
-    // Filtramos por empresaId para garantir que o histórico seja consistente com a conta mestre
     const q = query(
       collection(db, "vendas"), 
       where("empresaId", "==", empresaId),
@@ -49,9 +46,6 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
     return () => unsubscribe();
   }, [empresaId]);
 
-  /* ===============================
-      LÓGICA DE FILTRAGEM
-  =============================== */
   const vendasFiltradas = useMemo(() => {
     return vendas.filter(v => {
       const dataVenda = new Date(v.data);
@@ -60,7 +54,7 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
       if (fim) fim.setHours(23, 59, 59);
 
       const matchesSearch = v.id.toLowerCase().includes(pesquisa.toLowerCase()) || 
-                           v.infoAdicional?.toLowerCase().includes(pesquisa.toLowerCase());
+                            v.infoAdicional?.toLowerCase().includes(pesquisa.toLowerCase());
       const matchesMetodo = filtroMetodo === 'Todos' || v.metodo === filtroMetodo;
       const matchesData = (!inicio || dataVenda >= inicio) && (!fim || dataVenda <= fim);
 
@@ -75,7 +69,6 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
       total += Number(v.total);
       v.itens?.forEach(item => {
         const prod = produtos.find(p => p.id === item.id);
-        // Se não encontrar o custo original, assume-se lucro baseado no preço total
         const custoUnitario = Number(prod?.custo || 0);
         lucro += (Number(item.preco) - custoUnitario) * Number(item.qtd);
       });
@@ -83,16 +76,14 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
     return { total, lucro };
   }, [vendasFiltradas, produtos]);
 
-  /* ===============================
-      EXPORTAÇÃO
-  =============================== */
   const exportarExcel = (tipo = 'vendas') => {
     let csvContent = "data:text/csv;charset=utf-8,";
     
     if (tipo === 'vendas') {
-      csvContent += "Data,ID,Cliente/Info,Metodo,Total,Moeda\n";
+      // ADICIONADO COLUNA "HORA" NO CSV
+      csvContent += "Data,Hora,ID,Cliente/Info,Metodo,Total,Moeda\n";
       vendasFiltradas.forEach(v => {
-        csvContent += `${new Date(v.data).toLocaleDateString()},${v.id.slice(-6).toUpperCase()},${v.infoAdicional || 'Venda Rapida'},${v.metodo},${v.total},${configLoja?.moeda || 'MT'}\n`;
+        csvContent += `${new Date(v.data).toLocaleDateString()},${v.hora || '--:--'},${v.id.slice(-6).toUpperCase()},${v.infoAdicional || 'Venda Rapida'},${v.metodo},${v.total},${configLoja?.moeda || 'MT'}\n`;
       });
     } else {
       csvContent += "Produto,Stock Atual,Custo,Preco,Valor em Stock\n";
@@ -114,10 +105,10 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
   return (
     <div className="animate-in fade-in duration-500 space-y-6 pb-20">
       
-      {/* HEADER DINÂMICO */}
+      {/* HEADER */}
       <div className="flex flex-col lg:flex-row justify-between gap-6 bg-white p-8 rounded-[3rem] border border-slate-100 shadow-sm">
         <div>
-          <h2 className="text-3xl font-black uppercase italic tracking-tighter italic">Central de <span className="text-blue-600">Relatórios</span></h2>
+          <h2 className="text-3xl font-black uppercase italic tracking-tighter">Central de <span className="text-blue-600">Relatórios</span></h2>
           <div className="flex items-center gap-4 mt-2">
             <span className="text-[10px] bg-blue-50 text-blue-600 px-4 py-1.5 rounded-xl font-black uppercase tracking-widest border border-blue-100">
               {vendasFiltradas.length} Transações Encontradas
@@ -135,7 +126,7 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
         </div>
       </div>
 
-      {/* FILTROS E PESQUISA */}
+      {/* FILTROS */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <div className="lg:col-span-2 relative group">
           <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={20} />
@@ -167,7 +158,7 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
         </select>
       </div>
 
-      {/* DASHBOARD DE RESULTADOS */}
+      {/* METRICAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-slate-900 p-8 rounded-[3rem] text-white shadow-2xl shadow-slate-200 relative overflow-hidden group">
           <TrendingUp className="absolute right-[-20px] bottom-[-20px] size-48 opacity-10 group-hover:scale-110 transition-transform duration-700" />
@@ -186,13 +177,13 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
         </div>
       </div>
 
-      {/* TABELA DE VENDAS */}
+      {/* TABELA */}
       <div className="bg-white rounded-[3.5rem] shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 italic">
-                <th className="p-8">Data de Registo</th>
+                <th className="p-8">Data e Hora</th>
                 <th className="p-8">Detalhes da Transação</th>
                 <th className="p-8">Pagamento</th>
                 <th className="p-8 text-right">Valor Total</th>
@@ -203,7 +194,7 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
               {carregando ? (
                 <tr><td colSpan="5" className="p-20 text-center"><div className="animate-spin inline-block size-8 border-4 border-blue-600 border-t-transparent rounded-full"></div></td></tr>
               ) : vendasFiltradas.length === 0 ? (
-                <tr><td colSpan="5" className="p-20 text-center text-slate-400 font-black uppercase text-xs tracking-widest">Nenhuma venda encontrada no período</td></tr>
+                <tr><td colSpan="5" className="p-20 text-center text-slate-400 font-black uppercase text-xs tracking-widest">Nenhuma venda encontrada</td></tr>
               ) : vendasFiltradas.map(v => (
                 <tr key={v.id} className="hover:bg-slate-50/80 transition-colors group">
                   <td className="p-8">
@@ -211,7 +202,11 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
                       <div className="p-3 bg-slate-100 rounded-2xl text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
                         <Clock size={16} />
                       </div>
-                      <span className="font-bold text-slate-700 text-sm">{new Date(v.data).toLocaleDateString()}</span>
+                      <div>
+                        <p className="font-bold text-slate-700 text-sm">{new Date(v.data).toLocaleDateString()}</p>
+                        {/* EXIBIÇÃO DA HORA PARA SEGURANÇA */}
+                        <p className="text-[10px] font-black text-blue-500 tabular-nums">{v.hora || '--:--:--'}</p>
+                      </div>
                     </div>
                   </td>
                   <td className="p-8">
@@ -234,7 +229,6 @@ const Historico = ({ produtos, usuario, configLoja, avisar }) => {
                     <button 
                       onClick={() => setVendaParaReimprimir(v)} 
                       className="p-4 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-white rounded-2xl border border-transparent hover:border-blue-100 transition-all shadow-sm active:scale-95"
-                      title="Reimprimir Recibo"
                     >
                       <Printer size={20} />
                     </button>

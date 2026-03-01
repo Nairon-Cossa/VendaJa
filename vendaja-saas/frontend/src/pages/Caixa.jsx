@@ -41,7 +41,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const config = REGRAS_SETOR[usuario?.tipoNegocio] || REGRAS_SETOR['Geral'];
   const moeda = configLoja?.moeda || 'MT';
 
-  // Identificador mestre para a loja
   const empresaId = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
   const subtotal = carrinho.reduce((acc, item) => acc + (Number(item.preco || 0) * item.qtd), 0);
@@ -50,7 +49,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const valorIva = aplicarIva ? (baseTributavel * 0.16) : 0;
   const totalFinal = baseTributavel + valorIva;
 
-  // Filtro de produtos melhorado com optional chaining para evitar erros de stock vazio
   const produtosDaLoja = produtos.filter(p => {
     const pertenceALoja = p.lojaId === empresaId || p.empresaId === empresaId;
     const nomeBate = p.nome?.toLowerCase().includes(pesquisa.toLowerCase());
@@ -102,7 +100,9 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     const batch = writeBatch(db);
     
     try {
+      const agora = new Date();
       const vendaRef = doc(collection(db, "vendas"));
+      
       const dadosVenda = {
         id: vendaRef.id,
         empresaId: empresaId,
@@ -127,7 +127,8 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         metodo,
         status: metodo === 'Dívida (Fiado)' ? 'PENDENTE' : 'PAGO',
         referencia: referencia.toUpperCase(),
-        data: new Date().toISOString(),
+        data: agora.toISOString(),
+        hora: agora.toLocaleTimeString('pt-PT'), // REGISTA HORA:MINUTO:SEGUNDO PARA SEGURANÇA
         timestamp: serverTimestamp()
       };
 
@@ -277,7 +278,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
             )}
           </div>
 
-          {/* FINALIZAÇÃO */}
           <div className="p-6 bg-slate-900 text-white rounded-t-[2.5rem]">
             <div className="grid grid-cols-6 gap-2 mb-4">
               {[
