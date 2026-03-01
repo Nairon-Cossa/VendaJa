@@ -5,10 +5,10 @@ import {
   Truck, Building2, MessageSquare, Facebook, Instagram, Smartphone, Hash, Mail
 } from 'lucide-react';
 import { db } from '../firebase';
-import { doc, setDoc, getDocs, query, collection, where } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 
 const Definicoes = ({ usuario, configLoja, avisar }) => {
-  // Estado inicial fundindo Configuração Existente + Dados do Registo
+  // Estado inicial - Tenta usar configLoja primeiro, depois usuario, depois vazio
   const [dados, setDados] = useState({
     nomeOficial: configLoja?.nomeOficial || usuario?.nomeLoja || '',
     nuit: configLoja?.nuit || '',
@@ -42,13 +42,13 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
   const empresaId = usuario?.empresaId || usuario?.uid;
   const isPremium = usuario?.plano === 'premium' || usuario?.role === 'superadmin';
 
-  // Sincroniza quando os dados chegam do Firebase
+  // CORREÇÃO: Sincroniza o estado local sempre que as props configLoja mudarem (ex: ao voltar à página)
   useEffect(() => {
-    if (configLoja) {
+    if (configLoja && Object.keys(configLoja).length > 0) {
       setDados(prev => ({ 
         ...prev, 
         ...configLoja,
-        // Garante que o logo use a URL correta do storage se existir
+        // Mantém a consistência entre logo e logoUrl
         logo: configLoja.logo || configLoja.logoUrl || prev.logo 
       }));
     }
@@ -74,7 +74,8 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
         canvas.height = img.height * scaleSize;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        setDados(prev => ({ ...prev, logo: canvas.toDataURL('image/jpeg', 0.8) }));
+        const base64 = canvas.toDataURL('image/jpeg', 0.8);
+        setDados(prev => ({ ...prev, logo: base64 }));
         setCarregandoImagem(false);
         avisar?.("LOGO ATUALIZADO", "sucesso");
       };
@@ -84,19 +85,23 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
 
   const salvarDefinicoes = async (e) => {
     if (e) e.preventDefault();
-    if (!empresaId) return;
+    if (!empresaId) {
+      avisar?.("ERRO: ID DA EMPRESA NÃO ENCONTRADO", "erro");
+      return;
+    }
 
     setSalvando(true);
     try {
+      // Validação básica de campos obrigatórios
       if (!dados.nuit || !dados.telefone || !dados.endereco || !dados.nomeOficial) {
         avisar?.("PREENCHA TODOS OS CAMPOS OBRIGATÓRIOS", "erro");
         setSalvando(false);
         return;
       }
 
-      let finalSlug = dados.slugLoja || formatarSlug(dados.nomeOficial || "");
+      const finalSlug = dados.slugLoja || formatarSlug(dados.nomeOficial || "");
 
-      // Salva tanto na coleção de 'configuracoes' quanto atualiza 'empresas' para manter sincronia
+      // Prepara o objeto com todos os campos atuais do estado
       const batchData = {
         ...dados,
         empresaId: empresaId,
@@ -104,16 +109,22 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
         ultimaAtualizacao: new Date().toISOString()
       };
 
+      // 1. Grava na coleção de configurações (dados detalhados)
       await setDoc(doc(db, "configuracoes", empresaId), batchData, { merge: true });
+      
+      // 2. Grava na coleção de empresas (dados de perfil público)
       await setDoc(doc(db, "empresas", empresaId), { 
         nome: dados.nomeOficial,
         tipoNegocio: dados.tipoNegocio,
-        logoUrl: dados.logo
+        logoUrl: dados.logo,
+        telefone: dados.telefone,
+        nuit: dados.nuit,
+        configurado: true
       }, { merge: true });
 
-      avisar?.("CONFIGURAÇÕES GUARDADAS", "sucesso");
+      avisar?.("CONFIGURAÇÕES GUARDADAS COM SUCESSO", "sucesso");
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao salvar:", error);
       avisar?.("ERRO AO GUARDAR ALTERAÇÕES", "erro");
     } finally {
       setSalvando(false);
@@ -134,9 +145,13 @@ const Definicoes = ({ usuario, configLoja, avisar }) => {
             Gestão de Identidade, Logística e Financeiro
           </p>
         </div>
-        <button onClick={salvarDefinicoes} disabled={salvando} className="bg-slate-900 hover:bg-blue-600 text-white px-10 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-2xl flex items-center gap-3 active:scale-95 disabled:opacity-50">
+        <button 
+          onClick={salvarDefinicoes} 
+          disabled={salvando} 
+          className="bg-slate-900 hover:bg-blue-600 text-white px-10 py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-2xl flex items-center gap-3 active:scale-95 disabled:opacity-50"
+        >
           {salvando ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-          {salvando ? 'A PROCESSAR...' : 'Guardar Alterações'}
+          {salvando ? 'A GUARDAR...' : 'Guardar Alterações'}
         </button>
       </div>
 
