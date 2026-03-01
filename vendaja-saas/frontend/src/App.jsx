@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { db, auth } from './firebase'; 
 import { collection, onSnapshot, query, where, doc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth'; 
-import { ShieldAlert, MessageCircle, LogOut, Clock } from 'lucide-react';
+import { ShieldAlert, MessageCircle, LogOut, Clock, X, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 // Páginas e Componentes
 import Dashboard from './pages/Dashboard';
@@ -63,8 +63,14 @@ function App() {
   const [mostrarFecho, setMostrarFecho] = useState(false);
   const [produtos, setProdutos] = useState([]);
   const [carregando, setCarregando] = useState(true);
+  const [aviso, setAviso] = useState(null);
 
   const MEU_WHATSAPP = "258878296706";
+
+  const avisar = (msg, tipo = "sucesso") => {
+    setAviso({ msg, tipo });
+    setTimeout(() => setAviso(null), 3000);
+  };
 
   const fazerLogout = useCallback(() => {
     auth.signOut();
@@ -91,15 +97,13 @@ function App() {
     };
   }, []);
 
-  // Monitor de Auth do Firebase
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      // Se não há usuário no Auth e o que está no localStorage tem senha (é funcionário), não desloga
       if (!user) {
         const salvo = localStorage.getItem('vendaJa_sessao');
         if (salvo) {
           const dados = JSON.parse(salvo);
-          if (dados.password) return; // É funcionário, mantém logado
+          if (dados.password) return; 
         }
         fazerLogout();
       }
@@ -107,24 +111,19 @@ function App() {
     return () => unsubscribeAuth();
   }, [fazerLogout]);
 
-  // Sincronização em tempo real do Perfil (CORRIGIDO)
   useEffect(() => {
-    // Se não há usuário logado, para o carregamento
     if (!usuario?.uid) {
       setCarregando(false);
       return;
     }
 
-    // A ID de busca no Firestore é SEMPRE o UID ou o Email salvo no login
     const idParaDocumento = usuario.uid; 
-
     const unsubUser = onSnapshot(doc(db, "usuarios", idParaDocumento), (docSnap) => {
       if (docSnap.exists()) {
         const dadosNovos = { ...docSnap.data(), uid: docSnap.id };
         setUsuario(dadosNovos);
         localStorage.setItem('vendaJa_sessao', JSON.stringify(dadosNovos));
       } else if (!isSuperAdmin) {
-        // Se o documento foi deletado no banco, desloga
         fazerLogout();
       }
       setCarregando(false);
@@ -140,17 +139,14 @@ function App() {
     moeda: 'MT', mensagemRecibo: 'Obrigado!', logoUrl: ''
   });
 
-  // Sincronização de Configurações e Produtos
   useEffect(() => {
     const empresaId = usuario?.empresaId || usuario?.uid;
     if (!empresaId || (usuario?.status !== 'ativo' && !isSuperAdmin)) return;
 
-    // Configurações
     const unsubConfig = onSnapshot(doc(db, "empresas", empresaId), (docSnap) => {
       if (docSnap.exists()) setConfigLoja(docSnap.data());
     });
 
-    // Produtos
     const q = query(collection(db, "produtos"), where("empresaId", "==", empresaId));
     const unsubProd = onSnapshot(q, (snap) => {
       setProdutos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -171,6 +167,18 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans">
+        
+        {/* Sistema de Notificação Global (Para o avisar do Caixa) */}
+        {aviso && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] animate-in slide-in-from-top duration-300">
+            <div className={`flex items-center gap-3 px-6 py-4 rounded-3xl shadow-2xl border ${aviso.tipo === 'sucesso' ? 'bg-emerald-600 border-emerald-500' : 'bg-red-600 border-red-500'} text-white`}>
+              {aviso.tipo === 'sucesso' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+              <span className="font-black uppercase text-[10px] tracking-widest">{aviso.msg}</span>
+              <button onClick={() => setAviso(null)} className="ml-2 opacity-50 hover:opacity-100"><X size={14}/></button>
+            </div>
+          </div>
+        )}
+
         <Routes>
           <Route path="/loja/:slug" element={<LojaPublica />} />
           <Route path="/redefinir-senha" element={<RedefinirSenha />} />
@@ -198,7 +206,7 @@ function App() {
                     ) : <Navigate to="/login" />
                   } />
                   
-                  <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} /> : <Navigate to="/" />} />
+                  <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
                   <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
                   <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
 

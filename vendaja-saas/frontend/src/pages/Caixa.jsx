@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
   Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Clock, 
-  CreditCard, Building2, User, ShoppingBag
+  CreditCard, Building2, User, ShoppingBag, Inbox
 } from 'lucide-react';
 import ReciboA4 from '../components/ReciboA4';
 
@@ -24,7 +24,7 @@ const CORES_METODOS = {
   'Dívida (Fiado)': 'bg-slate-700 border-slate-700'
 };
 
-const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
+const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const [carrinho, setCarrinho] = useState([]);
   const [pesquisa, setPesquisa] = useState('');
   const [metodo, setMetodo] = useState('Dinheiro');
@@ -41,27 +41,32 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
   const config = REGRAS_SETOR[usuario?.tipoNegocio] || REGRAS_SETOR['Geral'];
   const moeda = configLoja?.moeda || 'MT';
 
-  // Identificador mestre para a loja (garante que dono e funcionário vejam a mesma coisa)
+  // Identificador mestre para a loja
   const empresaId = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
-  const subtotal = carrinho.reduce((acc, item) => acc + (Number(item.preco) * item.qtd), 0);
+  const subtotal = carrinho.reduce((acc, item) => acc + (Number(item.preco || 0) * item.qtd), 0);
   const valorDesconto = Number(desconto) || 0;
   const baseTributavel = Math.max(0, subtotal - valorDesconto);
   const valorIva = aplicarIva ? (baseTributavel * 0.16) : 0;
   const totalFinal = baseTributavel + valorIva;
 
-  const produtosDaLoja = produtos.filter(p => 
-    (p.empresaId === empresaId || p.lojaId === empresaId) && 
-    (p.nome.toLowerCase().includes(pesquisa.toLowerCase()) || 
-     (p.referencia && p.referencia.toLowerCase().includes(pesquisa.toLowerCase())))
-  );
+  // Filtro de produtos melhorado com optional chaining para evitar erros de stock vazio
+  const produtosDaLoja = produtos.filter(p => {
+    const pertenceALoja = p.lojaId === empresaId || p.empresaId === empresaId;
+    const nomeBate = p.nome?.toLowerCase().includes(pesquisa.toLowerCase());
+    const refBate = p.referencia?.toLowerCase().includes(pesquisa.toLowerCase());
+    return pertenceALoja && (nomeBate || refBate);
+  });
 
   const adicionarAoCarrinho = (p) => {
     const itemNoCarrinho = carrinho.find(item => item.id === p.id);
-    if (p.stock <= (itemNoCarrinho?.qtd || 0)) {
-      avisar?.("STOCK ESGOTADO", "erro");
+    const stockDisponivel = Number(p.stock || 0);
+
+    if (stockDisponivel <= (itemNoCarrinho?.qtd || 0)) {
+      avisar?.("STOCK ESGOTADO OU INSUFICIENTE", "erro");
       return;
     }
+    
     if (itemNoCarrinho) {
       setCarrinho(carrinho.map(item => item.id === p.id ? { ...item, qtd: item.qtd + 1 } : item));
     } else {
@@ -72,6 +77,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
 
   const removerOuDiminuir = (id) => {
     const item = carrinho.find(i => i.id === id);
+    if (!item) return;
     if (item.qtd > 1) {
       setCarrinho(carrinho.map(i => i.id === id ? { ...i, qtd: i.qtd - 1 } : i));
     } else {
@@ -99,11 +105,11 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
       const vendaRef = doc(collection(db, "vendas"));
       const dadosVenda = {
         id: vendaRef.id,
-        empresaId: empresaId, // CAMPO CRÍTICO PARA O NOVO DASHBOARD
-        lojaId: empresaId,    // Compatibilidade antiga
+        empresaId: empresaId,
+        lojaId: empresaId,
         vendedorId: usuario.uid,
-        vendedorNome: usuario.nome,
-        lojaNome: usuario.nomeLoja,
+        vendedorNome: usuario.nome || "Vendedor",
+        lojaNome: usuario.nomeLoja || "Minha Loja",
         infoAdicional: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
         clienteNuit: nuitCliente,
         clienteEndereco: enderecoCliente,
@@ -111,7 +117,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           id: item.id,
           nome: item.nome,
           preco: Number(item.preco),
-          custoCompra: Number(item.custo || 0), // Salva o custo no momento da venda para lucro real
+          custoCompra: Number(item.custo || 0),
           qtd: item.qtd
         })),
         subtotal,
@@ -149,12 +155,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
       await batch.commit();
 
       setVendaFinalizada(dadosVenda);
-      
-      if (navigator.onLine) {
-        avisar?.("VENDA REGISTADA!", "sucesso");
-      } else {
-        avisar?.("GUARDADO LOCALMENTE (OFFLINE)", "aviso");
-      }
+      avisar?.("VENDA REGISTADA!", "sucesso");
 
     } catch (error) {
       console.error(error);
@@ -168,7 +169,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
     <>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-100px)] overflow-hidden">
         
-        {/* PRODUTOS */}
+        {/* LADO ESQUERDO: PRODUTOS */}
         <div className="flex-1 bg-slate-50 rounded-[2rem] flex flex-col overflow-hidden border border-slate-200">
           <div className="p-4 bg-white border-b shadow-sm">
             <div className="relative">
@@ -184,32 +185,39 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 custom-scrollbar">
-            {produtosDaLoja.map(p => (
-              <button 
-                key={p.id} 
-                onClick={() => adicionarAoCarrinho(p)} 
-                disabled={p.stock <= 0}
-                className={`group p-3 rounded-[1.5rem] border-2 transition-all text-left flex flex-col justify-between h-36 ${p.stock <= 0 ? 'bg-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-transparent hover:border-blue-500 hover:shadow-lg shadow-sm active:scale-95'}`}
-              >
-                <div>
-                  <span className="text-[7px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{p.categoria}</span>
-                  <h4 className="font-black text-slate-800 text-[11px] uppercase leading-tight line-clamp-2 mt-1">{p.nome}</h4>
-                  <p className="text-[9px] font-bold text-slate-400 mt-1">Stock: {p.stock}</p>
-                </div>
-                <div className="flex items-end justify-between">
-                  <p className="text-base font-black text-slate-900 italic tracking-tighter">
-                    {Number(p.preco).toFixed(2)} <small className="text-[9px] not-italic opacity-40">{moeda}</small>
-                  </p>
-                  <div className="bg-blue-600 text-white p-1.5 rounded-lg">
-                    <Plus size={14} />
+            {produtosDaLoja.length === 0 ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-20 opacity-20">
+                 <Inbox size={60} />
+                 <p className="font-black uppercase text-xs mt-4">Nenhum produto encontrado</p>
+              </div>
+            ) : (
+              produtosDaLoja.map(p => (
+                <button 
+                  key={p.id} 
+                  onClick={() => adicionarAoCarrinho(p)} 
+                  disabled={Number(p.stock || 0) <= 0}
+                  className={`group p-3 rounded-[1.5rem] border-2 transition-all text-left flex flex-col justify-between h-36 ${Number(p.stock || 0) <= 0 ? 'bg-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-transparent hover:border-blue-500 hover:shadow-lg shadow-sm active:scale-95'}`}
+                >
+                  <div>
+                    <span className="text-[7px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{p.categoria || 'Geral'}</span>
+                    <h4 className="font-black text-slate-800 text-[11px] uppercase leading-tight line-clamp-2 mt-1">{p.nome}</h4>
+                    <p className="text-[9px] font-bold text-slate-400 mt-1">Stock: {p.stock}</p>
                   </div>
-                </div>
-              </button>
-            ))}
+                  <div className="flex items-end justify-between">
+                    <p className="text-base font-black text-slate-900 italic tracking-tighter">
+                      {Number(p.preco || 0).toFixed(2)} <small className="text-[9px] not-italic opacity-40">{moeda}</small>
+                    </p>
+                    <div className="bg-blue-600 text-white p-1.5 rounded-lg">
+                      <Plus size={14} />
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
-        {/* CARRINHO */}
+        {/* LADO DIREITO: CARRINHO */}
         <div className="w-full lg:w-[420px] bg-white rounded-[2rem] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
           <div className="p-5 bg-slate-50 border-b">
             <div className="flex items-center gap-2 mb-3">
@@ -255,11 +263,11 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
                       <button onClick={() => removerOuDiminuir(item.id)} className="text-slate-400 hover:text-red-500"><Minus size={12}/></button>
                       <span className="text-xs font-black text-blue-600 w-6 text-center">{item.qtd}</span>
                       <button onClick={() => adicionarAoCarrinho(item)} className="text-slate-400 hover:text-blue-500"><Plus size={12}/></button>
-                      <span className="text-[9px] font-bold text-slate-400 ml-2">x {item.preco.toFixed(2)}</span>
+                      <span className="text-[9px] font-bold text-slate-400 ml-2">x {Number(item.preco).toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="text-right ml-4">
-                    <p className="font-black text-slate-900 text-xs">{(item.qtd * item.preco).toFixed(2)}</p>
+                    <p className="font-black text-slate-900 text-xs">{(item.qtd * Number(item.preco)).toFixed(2)}</p>
                     <button onClick={() => setCarrinho(carrinho.filter(c => c.id !== item.id))} className="text-red-300 hover:text-red-500">
                       <Trash2 size={12}/>
                     </button>
@@ -269,7 +277,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
             )}
           </div>
 
-          {/* CHECKOUT SECTION */}
+          {/* FINALIZAÇÃO */}
           <div className="p-6 bg-slate-900 text-white rounded-t-[2.5rem]">
             <div className="grid grid-cols-6 gap-2 mb-4">
               {[
@@ -282,6 +290,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
               ].map(m => (
                 <button
                   key={m.id}
+                  type="button"
                   onClick={() => setMetodo(m.id)}
                   className={`flex flex-col items-center justify-center py-2 rounded-xl border-2 transition-all ${metodo === m.id ? `${CORES_METODOS[m.id]} text-white border-transparent` : 'border-white/10 text-white/30 hover:border-white/30'}`}
                 >
@@ -292,7 +301,7 @@ const Caixa = ({ usuario, produtos, configLoja, avisar }) => {
             </div>
 
             <div className="grid grid-cols-2 gap-2 mb-4">
-               <button onClick={() => setAplicarIva(!aplicarIva)} className={`p-2 rounded-xl border text-[10px] font-black transition-all ${aplicarIva ? 'bg-blue-600 border-blue-600' : 'bg-white/5 border-white/10 text-white/40'}`}>+ IVA (16%)</button>
+               <button type="button" onClick={() => setAplicarIva(!aplicarIva)} className={`p-2 rounded-xl border text-[10px] font-black transition-all ${aplicarIva ? 'bg-blue-600 border-blue-600' : 'bg-white/5 border-white/10 text-white/40'}`}>+ IVA (16%)</button>
                <input type="number" placeholder="Desconto" className="bg-white/5 border border-white/10 p-2 rounded-xl text-white font-bold text-[10px] outline-none" value={desconto} onChange={e => setDesconto(e.target.value)} />
             </div>
 

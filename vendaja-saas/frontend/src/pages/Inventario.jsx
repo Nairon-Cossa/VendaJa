@@ -7,7 +7,7 @@ import {
 import {
   Plus, Search, Edit3, Trash2,
   Package, X, Loader2,
-  DollarSign, FileText, Truck, Receipt, AlertTriangle
+  DollarSign, FileText, Truck, Receipt, AlertTriangle, Inbox
 } from 'lucide-react';
 
 const Inventario = ({ usuario, avisar, configLoja }) => {
@@ -15,11 +15,12 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
   const [mostrarModal, setMostrarModal] = useState(false);
   const [produtoEditando, setProdutoEditando] = useState(null);
   const [carregando, setCarregando] = useState(false);
+  const [carregandoDados, setCarregandoDados] = useState(true); // NOVO: Para feedback de carregamento
   const [produtos, setProdutos] = useState([]);
 
   const isPremium = usuario?.plano === 'premium';
   
-  // UPDATE: Garantia de ID único para isolamento de dados (Empresa vs Loja)
+  // Identificador mestre: Prioriza empresaId, depois lojaId, depois UID
   const empresaId = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
   const [novoProd, setNovoProd] = useState({
@@ -36,38 +37,49 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
   });
 
   useEffect(() => {
-    if (!empresaId) return;
+    if (!empresaId) {
+      setCarregandoDados(false);
+      return;
+    }
 
-    // UPDATE: Padronização da busca para usar o identificador mestre da conta
+    // Log para debug (pode remover depois de testar)
+    console.log("Buscando produtos para o ID:", empresaId);
+
+    // A query usa 'lojaId' conforme o índice que você tem no Firebase
     const q = query(
       collection(db, "produtos"),
       where("lojaId", "==", empresaId),
-      orderBy("nome")
+      orderBy("nome", "asc")
     );
 
     const unsub = onSnapshot(q, (snapshot) => {
       const lista = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setProdutos(lista);
+      setCarregandoDados(false);
     }, (error) => {
       console.error("Erro Firestore Inventário:", error);
       avisar?.("ERRO AO CARREGAR INVENTÁRIO", "erro");
+      setCarregandoDados(false);
     });
 
     return () => unsub();
   }, [empresaId, avisar]);
 
   const metricas = useMemo(() => {
-    const totalItens = produtos.reduce((acc, p) => acc + Number(p.stock), 0);
-    const valorCusto = produtos.reduce((acc, p) => acc + (Number(p.custo) * Number(p.stock)), 0);
-    const valorVendaEstimado = produtos.reduce((acc, p) => acc + (Number(p.preco) * Number(p.stock)), 0);
-    const stockBaixo = produtos.filter(p => Number(p.stock) <= 5).length;
+    const totalItens = produtos.reduce((acc, p) => acc + Number(p.stock || 0), 0);
+    const valorCusto = produtos.reduce((acc, p) => acc + (Number(p.custo || 0) * Number(p.stock || 0)), 0);
+    const valorVendaEstimado = produtos.reduce((acc, p) => acc + (Number(p.preco || 0) * Number(p.stock || 0)), 0);
+    const stockBaixo = produtos.filter(p => Number(p.stock || 0) <= 5).length;
 
     return { totalItens, valorCusto, valorVendaEstimado, stockBaixo, lucroPotencial: valorVendaEstimado - valorCusto };
   }, [produtos]);
 
   const salvarProduto = async (e) => {
     e.preventDefault();
-    if (!empresaId) return;
+    if (!empresaId) {
+        avisar?.("ERRO: USUÁRIO NÃO IDENTIFICADO", "erro");
+        return;
+    }
     
     setCarregando(true);
     const batch = writeBatch(db);
@@ -84,7 +96,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         fornecedor: novoProd.fornecedor.toUpperCase().trim(),
         temIva: novoProd.temIva,
         venderOnline: isPremium ? novoProd.venderOnline : false,
-        lojaId: empresaId, // Mantém o vínculo correto
+        lojaId: empresaId, 
         empresaId: empresaId,
         atualizadoEm: serverTimestamp()
       };
@@ -98,14 +110,8 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
       }
 
       await batch.commit();
-
       fecharModal();
-      
-      if (navigator.onLine) {
-        avisar?.("PRODUTO GUARDADO COM SUCESSO", "sucesso");
-      } else {
-        avisar?.("GUARDADO LOCALMENTE (MODO OFFLINE)", "aviso");
-      }
+      avisar?.("PRODUTO GUARDADO COM SUCESSO", "sucesso");
 
     } catch (err) {
       console.error(err);
@@ -147,7 +153,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
   };
 
   const produtosFiltrados = produtos.filter(p =>
-    p.nome.toLowerCase().includes(pesquisa.toLowerCase()) ||
+    p.nome?.toLowerCase().includes(pesquisa.toLowerCase()) ||
     p.fornecedor?.toLowerCase().includes(pesquisa.toLowerCase()) ||
     p.referencia?.toLowerCase().includes(pesquisa.toLowerCase())
   );
@@ -170,7 +176,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         </button>
       </div>
 
-      {/* PAINEL DE MÉTRICAS RÁPIDAS */}
+      {/* PAINEL DE MÉTRICAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
              <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Valor em Stock (Custo)</p>
@@ -202,7 +208,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
           value={pesquisa} onChange={e => setPesquisa(e.target.value)} />
       </div>
 
-      {/* TABELA PROFISSIONAL */}
+      {/* TABELA */}
       <div className="bg-white rounded-[3rem] overflow-hidden border border-slate-100 shadow-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -218,46 +224,62 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {produtosFiltrados.map(p => {
-                const margem = p.preco - p.custo;
-                const percentagem = p.custo > 0 ? (margem / p.custo) * 100 : 0;
-                
-                return (
-                  <tr key={p.id} className="hover:bg-blue-50/30 transition-colors group">
-                    <td className="p-8">
-                      <div className="font-mono text-blue-600 text-[11px] font-black">#{p.referencia || 'SEM-REF'}</div>
-                      <div className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-tighter">{p.fornecedor || 'Fornecedor Local'}</div>
-                    </td>
-                    <td className="p-8">
-                      <div className="font-black text-slate-800 uppercase text-sm group-hover:text-blue-700 transition-colors">{p.nome}</div>
-                      <div className="text-[10px] text-slate-400 italic line-clamp-1">{p.descricao || 'Nenhuma nota adicional registrada.'}</div>
-                    </td>
-                    <td className="p-8 text-center">
-                      <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-xs ${Number(p.stock) <= 5 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}>
-                        {p.stock} {Number(p.stock) <= 5 && <AlertTriangle size={12}/>}
-                      </div>
-                    </td>
-                    <td className="p-8 text-right font-bold text-slate-400 tabular-nums">{Number(p.custo || 0).toFixed(2)}</td>
-                    <td className="p-8 text-right font-black text-slate-900 tabular-nums text-lg">{Number(p.preco).toFixed(2)}</td>
-                    <td className="p-8 text-right">
-                        <div className="text-[10px] font-black text-emerald-600 uppercase">+{margem.toFixed(2)} {configLoja?.moeda || 'MT'}</div>
-                        <div className="text-[9px] text-slate-300 font-bold">{percentagem.toFixed(0)}% Lucro</div>
-                    </td>
-                    <td className="p-8">
-                      <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => abrirEdicao(p)} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Edit3 size={18} /></button>
-                        <button onClick={() => deletarProduto(p.id)} className="p-3 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Trash2 size={18} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+              {carregandoDados ? (
+                <tr>
+                  <td colSpan="7" className="p-20 text-center">
+                    <Loader2 className="animate-spin mx-auto text-blue-500 mb-4" size={40} />
+                    <p className="text-xs font-black uppercase text-slate-400 tracking-widest">A carregar inventário...</p>
+                  </td>
+                </tr>
+              ) : produtosFiltrados.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="p-20 text-center">
+                    <Inbox className="mx-auto text-slate-200 mb-4" size={50} />
+                    <p className="text-xs font-black uppercase text-slate-400 tracking-widest">Nenhum artigo encontrado no stock</p>
+                  </td>
+                </tr>
+              ) : (
+                produtosFiltrados.map(p => {
+                  const margem = (p.preco || 0) - (p.custo || 0);
+                  const percentagem = p.custo > 0 ? (margem / p.custo) * 100 : 0;
+                  
+                  return (
+                    <tr key={p.id} className="hover:bg-blue-50/30 transition-colors group">
+                      <td className="p-8">
+                        <div className="font-mono text-blue-600 text-[11px] font-black">#{p.referencia || 'SEM-REF'}</div>
+                        <div className="text-[9px] text-slate-400 font-bold mt-1 uppercase tracking-tighter">{p.fornecedor || 'Fornecedor Local'}</div>
+                      </td>
+                      <td className="p-8">
+                        <div className="font-black text-slate-800 uppercase text-sm group-hover:text-blue-700 transition-colors">{p.nome}</div>
+                        <div className="text-[10px] text-slate-400 italic line-clamp-1">{p.descricao || 'Nenhuma nota adicional registrada.'}</div>
+                      </td>
+                      <td className="p-8 text-center">
+                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-xs ${Number(p.stock) <= 5 ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-700'}`}>
+                          {p.stock} {Number(p.stock) <= 5 && <AlertTriangle size={12}/>}
+                        </div>
+                      </td>
+                      <td className="p-8 text-right font-bold text-slate-400 tabular-nums">{Number(p.custo || 0).toFixed(2)}</td>
+                      <td className="p-8 text-right font-black text-slate-900 tabular-nums text-lg">{Number(p.preco || 0).toFixed(2)}</td>
+                      <td className="p-8 text-right">
+                          <div className="text-[10px] font-black text-emerald-600 uppercase">+{margem.toFixed(2)} {configLoja?.moeda || 'MT'}</div>
+                          <div className="text-[9px] text-slate-300 font-bold">{percentagem.toFixed(0)}% Lucro</div>
+                      </td>
+                      <td className="p-8">
+                        <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => abrirEdicao(p)} className="p-3 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Edit3 size={18} /></button>
+                          <button onClick={() => deletarProduto(p.id)} className="p-3 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-2xl transition-all shadow-sm active:scale-90"><Trash2 size={18} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* MODAL DE FICHA TÉCNICA */}
+      {/* MODAL */}
       {mostrarModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[100] p-4">
           <form onSubmit={salvarProduto} className="bg-white p-8 md:p-12 rounded-[3.5rem] w-full max-w-3xl max-h-[90vh] overflow-y-auto space-y-8 shadow-2xl animate-in zoom-in duration-300">
