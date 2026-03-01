@@ -85,6 +85,7 @@ const Inventario = ({ usuario, avisar, configLoja }) => {
         temIva: novoProd.temIva,
         venderOnline: isPremium ? novoProd.venderOnline : false,
         lojaId: empresaId, // Mantém o vínculo correto
+        empresaId: empresaId,
         atualizadoEm: serverTimestamp()
       };
 
