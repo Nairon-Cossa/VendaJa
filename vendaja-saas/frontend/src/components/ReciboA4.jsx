@@ -1,5 +1,5 @@
 import React from 'react';
-import { Printer, X, User, Building2, ShieldCheck, Globe, Phone, FileText } from 'lucide-react';
+import { Printer, X, User, Building2, ShieldCheck, Globe, Phone, FileText, CheckCircle2 } from 'lucide-react';
 
 const ReciboA4 = ({ venda, configLoja, fechar }) => {
   const moeda = configLoja.moeda || 'MT';
@@ -9,160 +9,228 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
   };
 
   const DocumentoPagina = ({ tipo }) => (
-    <div className="bg-white p-16 mb-8 mx-auto w-[210mm] min-h-[297mm] shadow-none print:shadow-none print:m-0 print:break-after-page flex flex-col border-x border-slate-50 print:border-none">
+    <div className="documento-a4 flex flex-col bg-white shadow-none print:shadow-none print:border-none border-x border-slate-100 mx-auto overflow-hidden">
       
-      {/* CABEÇALHO PERSONALIZADO DO NEGÓCIO */}
-      <div className="flex justify-between items-start border-b-4 border-slate-900 pb-10 mb-10">
-        <div className="flex gap-6 items-center">
-          {configLoja.logo ? (
-            <img src={configLoja.logo} alt="Logo" className="h-24 w-24 object-contain rounded-xl" />
+      {/* CABEÇALHO REFINADO */}
+      <div className="p-12 pb-8 flex justify-between items-start border-b-[6px] border-slate-900">
+        <div className="flex gap-8 items-center">
+          {configLoja.logoUrl || configLoja.logo ? (
+            <img 
+              src={configLoja.logoUrl || configLoja.logo} 
+              alt="Logo" 
+              className="h-28 w-28 object-contain rounded-2xl" 
+            />
           ) : (
-            <div className="h-24 w-24 bg-slate-100 border-2 border-slate-200 rounded-2xl flex items-center justify-center text-slate-400">
-               <Building2 size={40} />
+            <div className="h-24 w-24 bg-slate-50 border-2 border-slate-200 rounded-3xl flex items-center justify-center text-slate-300">
+               <Building2 size={44} />
             </div>
           )}
-          <div className="space-y-1">
-            <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-900 leading-none">
+          <div className="space-y-2">
+            <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-900 leading-none">
               {configLoja.nomeEmpresa || configLoja.nome || "A MINHA LOJA"}
             </h1>
-            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider space-y-0.5">
-              <p className="flex items-center gap-2"><Globe size={12}/> {configLoja.endereco || "Endereço não configurado"}</p>
-              <p className="flex items-center gap-2"><ShieldCheck size={12}/> NUIT: {configLoja.nuit || "--- --- ---"}</p>
-              <p className="flex items-center gap-2"><Phone size={12}/> {configLoja.telefone || "Contacto não disponível"}</p>
+            <div className="text-[12px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
+              <p className="flex items-center gap-2 font-black text-slate-700 underline decoration-blue-500/30 underline-offset-4">
+                <ShieldCheck size={14} className="text-blue-600"/> NUIT: {configLoja.nuit || "--- --- ---"}
+              </p>
+              <p className="flex items-center gap-2"><Globe size={13} className="text-slate-400"/> {configLoja.endereco || "Endereço não configurado"}</p>
+              <p className="flex items-center gap-2"><Phone size={13} className="text-slate-400"/> {configLoja.telefone || "Contacto não disponível"}</p>
             </div>
           </div>
         </div>
 
         <div className="text-right">
-          <div className="bg-slate-900 text-white px-8 py-4 rounded-2xl inline-block mb-4">
-            <h2 className="text-2xl font-black uppercase tracking-widest">Factura Recibo</h2>
-            <p className="text-[10px] font-bold opacity-60 uppercase tracking-[0.3em] text-center">{tipo}</p>
+          <div className="bg-slate-900 text-white px-10 py-5 rounded-3xl inline-block mb-6 shadow-xl shadow-slate-200 print:shadow-none">
+            <h2 className="text-3xl font-black uppercase tracking-widest leading-none">Factura</h2>
+            <p className="text-[11px] font-black opacity-70 uppercase tracking-[0.4em] mt-2 text-center border-t border-white/20 pt-2">{tipo}</p>
           </div>
-          <div className="text-[12px] font-black text-slate-900 uppercase">
-            <p className="text-slate-400 font-bold">Documento Nº</p>
-            <p className="text-xl"># {venda.id?.slice(-8).toUpperCase()}</p>
-            <p className="mt-2 text-slate-500 font-bold">Data: {new Date(venda.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString('pt-MZ')}</p>
+          <div className="space-y-1">
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Documento Nº</p>
+            <p className="text-2xl font-black text-slate-900 tabular-nums"># {venda.id?.slice(-8).toUpperCase()}</p>
+            <div className="flex flex-col items-end mt-2 pt-2 border-t border-slate-100">
+              <p className="text-[11px] font-black text-slate-400 uppercase">Data de Emissão</p>
+              <p className="font-black text-slate-700 text-sm">
+                {new Date(venda.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'long', year: 'numeric' })}
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ÁREA DO CLIENTE */}
-      <div className="bg-slate-50 rounded-[2rem] p-8 mb-10 flex justify-between items-center border border-slate-100">
-        <div>
-          <h3 className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-[0.2em] flex items-center gap-2">
-            <User size={12}/> Identificação do Cliente
-          </h3>
-          <p className="text-lg font-black text-slate-900 uppercase">{venda.clienteNome || venda.infoAdicional || "Consumidor Final"}</p>
-          <p className="text-xs font-bold text-slate-500 mt-1 uppercase">Ref/NUIT: {venda.clienteNuit || "--- --- ---"}</p>
+      <div className="p-12 pt-10 flex-grow">
+        {/* ÁREA DO CLIENTE COM DESIGN DE CARTÃO */}
+        <div className="grid grid-cols-12 gap-6 mb-12">
+          <div className="col-span-8 bg-slate-50 rounded-[2.5rem] p-8 border border-slate-100 relative overflow-hidden">
+             <div className="absolute top-0 right-0 p-4 opacity-5">
+                <User size={80} />
+             </div>
+             <h3 className="text-[11px] font-black uppercase text-blue-600 mb-4 tracking-[0.25em] flex items-center gap-2">
+                <User size={14}/> Dados do Cliente
+             </h3>
+             <p className="text-2xl font-black text-slate-900 uppercase leading-none mb-2">
+                {venda.clienteNome || venda.infoAdicional || "Consumidor Final"}
+             </p>
+             <p className="text-xs font-black text-slate-500 uppercase tracking-widest bg-white/50 inline-block px-3 py-1 rounded-full border border-slate-200">
+                NUIT: {venda.clienteNuit || "--- --- ---"}
+             </p>
+          </div>
+          <div className="col-span-4 bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col justify-center items-center">
+             <p className="text-[10px] font-black opacity-50 uppercase tracking-[0.3em] mb-2">Moeda de Liquidação</p>
+             <p className="text-4xl font-black">{moeda}</p>
+          </div>
         </div>
-        <div className="text-right border-l border-slate-200 pl-8">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Moeda Local</p>
-          <p className="text-2xl font-black text-slate-900">{moeda}</p>
-        </div>
-      </div>
 
-      {/* TABELA DE ITENS */}
-      <div className="flex-grow">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.2em]">
-              <th className="py-5 px-6 text-left rounded-l-2xl">Descrição do Produto/Serviço</th>
-              <th className="py-5 px-6 text-center">Qtd</th>
-              <th className="py-5 px-6 text-right">Preço Unit.</th>
-              <th className="py-5 px-6 text-right rounded-r-2xl">Total ({moeda})</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {venda.itens.map((item, idx) => (
-              <tr key={idx} className="text-[11px] font-bold text-slate-700">
-                <td className="py-6 px-6 uppercase tracking-tight">{item.nome}</td>
-                <td className="py-6 px-6 text-center text-slate-400 italic">{item.quantidade || item.qtd}</td>
-                <td className="py-6 px-6 text-right">{(item.precoUnitario || item.preco).toFixed(2)}</td>
-                <td className="py-6 px-6 text-right font-black text-slate-900">
-                    { ((item.quantidade || item.qtd) * (item.precoUnitario || item.preco)).toFixed(2) }
-                </td>
+        {/* TABELA DE ITENS PROFISSIONAL */}
+        <div className="overflow-hidden rounded-[2rem] border border-slate-100 mb-12 shadow-sm">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em]">
+                <th className="py-6 px-8 text-left">Descrição do Item</th>
+                <th className="py-6 px-6 text-center">Qtd</th>
+                <th className="py-6 px-6 text-right">Preço Unit.</th>
+                <th className="py-6 px-8 text-right bg-slate-800">Subtotal</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {venda.itens.map((item, idx) => (
+                <tr key={idx} className="text-[12px] font-bold text-slate-700 hover:bg-slate-50 transition-colors">
+                  <td className="py-6 px-8 uppercase tracking-tight font-black text-slate-900">{item.nome}</td>
+                  <td className="py-6 px-6 text-center text-slate-500 font-black tabular-nums">{item.quantidade || item.qtd}</td>
+                  <td className="py-6 px-6 text-right tabular-nums">{(item.precoUnitario || item.preco).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</td>
+                  <td className="py-6 px-8 text-right font-black text-slate-900 bg-slate-50/50 tabular-nums">
+                      { ((item.quantidade || item.qtd) * (item.precoUnitario || item.preco)).toLocaleString('pt-MZ', { minimumFractionDigits: 2 }) }
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      {/* TOTAIS E FECHAMENTO */}
-      <div className="mt-10 border-t-2 border-slate-100 pt-10">
-        <div className="flex justify-between items-end">
-          <div className="space-y-4">
-            <div className="bg-slate-100 px-6 py-4 rounded-2xl inline-block border border-slate-200">
-               <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Método de Liquidação</p>
-               <p className="text-sm font-black text-slate-900 uppercase italic tracking-widest">{venda.metodoPagamento || venda.metodo || "Numerário"}</p>
+        {/* RESUMO DE VALORES */}
+        <div className="flex justify-between items-start gap-12">
+          <div className="flex-grow space-y-6">
+            <div className="bg-blue-50/50 border border-blue-100 px-8 py-6 rounded-[2rem]">
+               <p className="text-[10px] font-black text-blue-600 uppercase mb-2 tracking-[0.2em]">Condições de Pagamento</p>
+               <div className="flex items-center gap-3">
+                  <div className="bg-blue-600 text-white p-2 rounded-xl">
+                    <CheckCircle2 size={16} />
+                  </div>
+                  <p className="text-md font-black text-slate-900 uppercase italic tracking-widest">{venda.metodoPagamento || venda.metodo || "Numerário"}</p>
+               </div>
             </div>
-            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-loose max-w-sm">
-              <p>• {configLoja.mensagemRecibo || "Obrigado pela preferência!"}</p>
-              <p>• Documento processado por software de gestão interna.</p>
+            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-widest leading-loose pl-2">
+              <p className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-slate-300 rounded-full" /> {configLoja.mensagemRecibo || "Obrigado pela preferência!"}</p>
+              <p className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-slate-300 rounded-full" /> Software certificado pela Autoridade Tributária.</p>
             </div>
           </div>
 
-          <div className="w-full max-w-[320px] space-y-2">
-            <div className="flex justify-between items-center bg-slate-900 text-white p-6 rounded-[2rem] shadow-xl shadow-slate-200">
-              <span className="text-sm font-black uppercase tracking-widest italic">Total Final</span>
-              <div className="text-right">
-                <span className="text-3xl font-black tabular-nums">{Number(venda.total).toFixed(2)}</span>
-                <span className="ml-2 text-xs font-bold opacity-60 uppercase">{moeda}</span>
+          <div className="w-full max-w-[350px]">
+            <div className="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl shadow-slate-200 print:shadow-none relative overflow-hidden">
+              <div className="relative z-10">
+                <div className="flex justify-between items-center mb-1 opacity-50">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Valor Bruto</span>
+                  <span className="text-sm font-black tabular-nums">{Number(venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div className="h-px bg-white/10 my-4"></div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-black uppercase tracking-[0.2em] italic">Total Geral</span>
+                  <div className="text-right">
+                    <span className="text-4xl font-black tabular-nums leading-none">{Number(venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
+                    <span className="ml-2 text-xs font-black opacity-50 uppercase">{moeda}</span>
+                  </div>
+                </div>
               </div>
+              <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-white/5 rounded-full blur-2xl"></div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ASSINATURAS */}
-      <div className="grid grid-cols-2 gap-20 mt-16 text-center">
-        <div>
-          <div className="h-px bg-slate-200 w-full mb-4"></div>
-          <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.3em]">Assinatura e Carimbo</p>
+      {/* RODAPÉ DE AUTENTICAÇÃO */}
+      <div className="p-12 pt-4 mt-auto">
+        <div className="grid grid-cols-2 gap-20 text-center mb-12">
+          <div>
+            <div className="h-px bg-slate-200 w-full mb-4"></div>
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">Carimbo e Assinatura Autorizada</p>
+          </div>
+          <div>
+            <div className="h-px bg-slate-200 w-full mb-4"></div>
+            <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">Recebi em Conformidade</p>
+          </div>
         </div>
-        <div>
-          <div className="h-px bg-slate-200 w-full mb-4"></div>
-          <p className="text-[9px] font-black uppercase text-slate-400 tracking-[0.3em]">Confirmação do Cliente</p>
-        </div>
-      </div>
 
-      {/* RODAPÉ DO SISTEMA (MUITO DISCRETO E PROFISSIONAL) */}
-      <div className="mt-auto pt-10 flex justify-center items-center gap-2 opacity-20 print:opacity-10 grayscale">
-        <FileText size={10} />
-        <p className="text-[7px] font-black uppercase tracking-[0.4em]">Documento Original emitido via Sistema Profissional de Gestão</p>
+        <div className="flex justify-between items-center pt-8 border-t border-slate-100 opacity-30 grayscale print:opacity-20">
+          <div className="flex items-center gap-3">
+             <FileText size={14} />
+             <p className="text-[8px] font-black uppercase tracking-[0.4em]">Documento Processado por Computador • VendaJá Pro</p>
+          </div>
+          <p className="text-[8px] font-black uppercase tracking-[0.4em]">Página 1 / 1</p>
+        </div>
       </div>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-md overflow-y-auto pt-10 pb-20">
-      <div className="fixed top-6 right-10 flex gap-4 print:hidden z-[10000]">
+    <div className="fixed inset-0 z-[9999] bg-slate-900/95 backdrop-blur-xl overflow-y-auto pt-10 pb-20 print:p-0 print:bg-white">
+      {/* BOTÕES DE CONTROLO */}
+      <div className="fixed top-8 right-12 flex gap-4 print:hidden z-[10000]">
         <button 
           onClick={imprimir}
-          className="bg-white text-slate-900 px-8 py-4 rounded-[1.5rem] font-black uppercase tracking-widest shadow-2xl hover:bg-slate-100 flex items-center gap-3 transition-all active:scale-95"
+          className="bg-blue-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-blue-700 flex items-center gap-3 transition-all active:scale-95 group"
         >
-          <Printer size={20}/> Imprimir
+          <Printer size={20} className="group-hover:rotate-12 transition-transform"/> Imprimir Factura
         </button>
         <button 
           onClick={fechar}
-          className="bg-red-500 text-white p-4 rounded-[1.5rem] shadow-2xl hover:bg-red-600 transition-all active:scale-95"
+          className="bg-white/10 text-white p-5 rounded-[2rem] backdrop-blur-md border border-white/20 hover:bg-red-500 hover:border-red-500 transition-all active:scale-95 group"
         >
-          <X size={24} />
+          <X size={24} className="group-hover:rotate-90 transition-transform" />
         </button>
       </div>
 
-      <div className="print:m-0">
+      {/* CONTENTOR DE IMPRESSÃO */}
+      <div className="print:m-0 print:p-0">
         <DocumentoPagina tipo="Original" />
+        <div className="print:break-after-page mb-20 print:mb-0"></div>
         <DocumentoPagina tipo="Duplicado (Contabilidade)" />
       </div>
 
+      {/* ESTILOS CRÍTICOS PARA PDF PERFEITO */}
       <style dangerouslySetInnerHTML={{ __html: `
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        
         @media print {
-          body { background: white !important; margin: 0 !important; padding: 0 !important; }
-          .fixed { display: none !important; }
-          @page { size: A4; margin: 0; }
-          div { box-shadow: none !important; border-radius: 0 !important; }
+          body { 
+            background: white !important; 
+            margin: 0 !important; 
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .fixed, .print\\:hidden { display: none !important; }
+          @page { 
+            size: A4; 
+            margin: 0; 
+          }
+          .documento-a4 {
+            width: 210mm !important;
+            height: 297mm !important;
+            margin: 0 !important;
+            border: none !important;
+            page-break-after: always !important;
+          }
         }
-        * { font-family: 'Inter', 'Segoe UI', sans-serif; }
+
+        .documento-a4 {
+          width: 210mm;
+          min-height: 297mm;
+          font-family: 'Inter', sans-serif;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+
+        /* Prevenir que o navegador adicione headers/footers dele */
+        @page { margin: 0; }
       `}} />
     </div>
   );
