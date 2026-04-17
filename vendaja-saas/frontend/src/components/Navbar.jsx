@@ -21,7 +21,8 @@ import {
   Car            // Peças / Mecânica
 } from 'lucide-react';
 
-const Navbar = ({ usuario, fazerLogout, isOnline }) => {
+// Adicionadas as props 'moeda' e 'setMoeda'
+const Navbar = ({ usuario, fazerLogout, isOnline, moeda = 'MZN', setMoeda }) => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
@@ -46,6 +47,14 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
   };
 
   const isPremium = usuario?.plano === 'premium' || usuario?.role === 'superadmin' || usuario?.email === "naironcossa.dev@gmail.com";
+
+  // Lista de moedas disponíveis
+  const moedas = [
+    { code: 'MZN', symbol: 'MT' },
+    { code: 'ZAR', symbol: 'R' },
+    { code: 'USD', symbol: '$' },
+    { code: 'EUR', symbol: '€' }
+  ];
 
   return (
     <nav className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
@@ -104,12 +113,27 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
 
         {/* RIGHT SIDE ACTIONS */}
         <div className="flex items-center gap-4">
+          
+          {/* SELETOR DE MOEDA (DESKTOP) */}
+          <div className="hidden lg:flex items-center bg-slate-100 rounded-xl p-1 gap-1 mr-2">
+            {moedas.map((m) => (
+              <button
+                key={m.code}
+                onClick={() => setMoeda && setMoeda(m.code)}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${moeda === m.code ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                title={`Mudar para ${m.code}`}
+              >
+                {m.symbol}
+              </button>
+            ))}
+          </div>
+
           <div className="hidden sm:flex flex-col items-end border-r border-slate-100 pr-6">
             <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.15em] mb-1">
-              {isPremium ? '👑 Premium' : (usuario.tipoNegocio || 'Plano Básico')}
+              {isPremium ? '👑 Premium' : (usuario?.tipoNegocio || 'Plano Básico')}
             </span>
             <span className="text-sm font-black text-slate-800">
-              {usuario.nome}
+              {usuario?.nome}
             </span>
           </div>
           
@@ -134,6 +158,23 @@ const Navbar = ({ usuario, fazerLogout, isOnline }) => {
       {/* MOBILE MENU DROPDOWN */}
       {isMobileMenuOpen && (
         <div className="md:hidden bg-white border-b border-slate-200 shadow-xl absolute top-20 left-0 w-full p-4 flex flex-col gap-2 animate-in slide-in-from-top-2">
+          
+          {/* SELETOR DE MOEDA (MOBILE) */}
+          <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1 mb-2">
+            {moedas.map((m) => (
+              <button
+                key={m.code}
+                onClick={() => {
+                  if (setMoeda) setMoeda(m.code);
+                  closeMenu();
+                }}
+                className={`flex-1 py-2 rounded-lg text-[12px] font-black transition-all ${moeda === m.code ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                {m.symbol}
+              </button>
+            ))}
+          </div>
+
           {isAdmin && (
             <Link 
               to="/" 

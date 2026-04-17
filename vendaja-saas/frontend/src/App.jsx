@@ -65,6 +65,16 @@ function App() {
   const [carregando, setCarregando] = useState(true);
   const [aviso, setAviso] = useState(null);
 
+  // LÓGICA DE MOEDA (Guardada no localStorage para lembrar a escolha)
+  const [moedaSelecionada, setMoedaSelecionada] = useState(() => {
+    return localStorage.getItem('vendaJa_moeda') || 'MZN';
+  });
+
+  const mudarMoeda = (novaMoeda) => {
+    setMoedaSelecionada(novaMoeda);
+    localStorage.setItem('vendaJa_moeda', novaMoeda);
+  };
+
   const MEU_WHATSAPP = "258878296706";
 
   const avisar = (msg, tipo = "sucesso") => {
@@ -144,7 +154,15 @@ function App() {
     if (!empresaId || (usuario?.status !== 'ativo' && !isSuperAdmin)) return;
 
     const unsubConfig = onSnapshot(doc(db, "empresas", empresaId), (docSnap) => {
-      if (docSnap.exists()) setConfigLoja(docSnap.data());
+      if (docSnap.exists()) {
+        const dadosConfig = docSnap.data();
+        setConfigLoja(dadosConfig);
+        
+        // Se a loja tem uma moeda definida e o utilizador ainda não escolheu nenhuma manualmente, usa a da loja
+        if (dadosConfig.moeda && !localStorage.getItem('vendaJa_moeda')) {
+          setMoedaSelecionada(dadosConfig.moeda);
+        }
+      }
     });
 
     const q = query(collection(db, "produtos"), where("empresaId", "==", empresaId));
@@ -154,6 +172,9 @@ function App() {
 
     return () => { unsubConfig(); unsubProd(); };
   }, [usuario?.empresaId, usuario?.uid, usuario?.status, isSuperAdmin]);
+
+  // Cria uma versão da config com a moeda selecionada para passar aos componentes
+  const configComMoedaSelecionada = { ...configLoja, moeda: moedaSelecionada };
 
   if (carregando) {
     return (
@@ -187,7 +208,14 @@ function App() {
           <Route path="*" element={
             <>
               {usuario && (usuario.status === 'ativo' || isSuperAdmin) && (
-                <Navbar usuario={usuario} fazerLogout={fazerLogout} isOnline={isOnline} abrirFecho={() => setMostrarFecho(true)} />
+                <Navbar 
+                  usuario={usuario} 
+                  fazerLogout={fazerLogout} 
+                  isOnline={isOnline} 
+                  abrirFecho={() => setMostrarFecho(true)} 
+                  moeda={moedaSelecionada} 
+                  setMoeda={mudarMoeda} 
+                />
               )}
 
               <main className={usuario && (usuario.status === 'ativo' || isSuperAdmin) ? "max-w-7xl mx-auto w-full p-6 md:p-8" : "w-full"}>
@@ -206,13 +234,14 @@ function App() {
                     ) : <Navigate to="/login" />
                   } />
                   
-                  <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configLoja} avisar={avisar} /> : <Navigate to="/" />} />
-                  <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
-                  <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
+                  {/* Atualizado as props configLoja para usar configComMoedaSelecionada */}
+                  <Route path="/caixa" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Caixa usuario={usuario} produtos={produtos} configLoja={configComMoedaSelecionada} avisar={avisar} /> : <Navigate to="/" />} />
+                  <Route path="/historico" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Historico produtos={produtos} usuario={usuario} configLoja={configComMoedaSelecionada} /> : <Navigate to="/" />} />
+                  <Route path="/fiados" element={(usuario?.status === 'ativo' || isSuperAdmin) ? <Fiados usuario={usuario} configLoja={configComMoedaSelecionada} /> : <Navigate to="/" />} />
 
                   <Route path="/inventario" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Inventario usuario={usuario} produtos={produtos} /> : <Navigate to="/" />} />
                   <Route path="/equipa" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Equipa usuario={usuario} /> : <Navigate to="/" />} />
-                  <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Definicoes usuario={usuario} configLoja={configLoja} /> : <Navigate to="/" />} />
+                  <Route path="/definicoes" element={(usuario?.status === 'ativo' || isSuperAdmin) && isAdmin ? <Definicoes usuario={usuario} configLoja={configComMoedaSelecionada} /> : <Navigate to="/" />} />
                   
                   <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
