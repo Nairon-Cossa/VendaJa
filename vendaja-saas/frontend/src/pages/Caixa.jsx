@@ -2,8 +2,8 @@ import React, { useState, useRef } from 'react';
 import { db } from '../firebase'; 
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
-  Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Clock, 
-  CreditCard, Building2, User, ShoppingBag, Inbox, FileText, ArrowLeftRight
+  Search, Trash2, CheckCircle2, Plus, Minus, Clock, 
+  User, ShoppingBag, FileText, ArrowLeftRight
 } from 'lucide-react';
 import ReciboA4 from '../components/ReciboA4';
 
@@ -15,7 +15,6 @@ const REGRAS_SETOR = {
   'Geral': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR" }
 };
 
-// Configuração de comportamento por tipo de documento
 const TIPOS_DOCUMENTOS = [
   { id: 'Venda a Dinheiro', abateStock: true, cor: 'text-emerald-500' },
   { id: 'Factura', abateStock: true, cor: 'text-blue-500' },
@@ -27,7 +26,7 @@ const TIPOS_DOCUMENTOS = [
   { id: 'Proposta', abateStock: false, cor: 'text-slate-400' },
   { id: 'Guia de Remessa', abateStock: true, cor: 'text-indigo-500' },
   { id: 'Guia de Transporte', abateStock: true, cor: 'text-indigo-500' },
-  { id: 'Nota de Crédito', abateStock: 'repor', cor: 'text-red-500' }, // Repõe stock
+  { id: 'Nota de Crédito', abateStock: 'repor', cor: 'text-red-500' }, 
   { id: 'Nota de Débito', abateStock: true, cor: 'text-red-700' },
   { id: 'Devolução', abateStock: 'repor', cor: 'text-rose-500' },
   { id: 'Devolução a Dinheiro', abateStock: 'repor', cor: 'text-rose-600' },
@@ -48,6 +47,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const [metodo, setMetodo] = useState('Dinheiro');
   const [tipoDoc, setTipoDoc] = useState('Venda a Dinheiro');
   const [referencia, setReferencia] = useState('');
+  const [refDocOrigem, setRefDocOrigem] = useState(''); // Para Notas de Crédito/Devolução
   const [desconto, setDesconto] = useState('');
   const [aplicarIva, setAplicarIva] = useState(false);
   const [nomeCliente, setNomeCliente] = useState('');
@@ -79,7 +79,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     const stockDisponivel = Number(p.stock || 0);
     const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
 
-    // Só valida stock se o documento for do tipo que abate stock
     if (docConfig.abateStock === true && stockDisponivel <= (itemNoCarrinho?.qtd || 0)) {
       avisar?.("STOCK INSUFICIENTE", "erro");
       return;
@@ -93,9 +92,26 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     setPesquisa(''); 
   };
 
+  const removerOuDiminuir = (id) => {
+    const item = carrinho.find(i => i.id === id);
+    if (item.qtd > 1) {
+      setCarrinho(carrinho.map(i => i.id === id ? { ...i, qtd: i.qtd - 1 } : i));
+    } else {
+      setCarrinho(carrinho.filter(i => i.id !== id));
+    }
+  };
+
   const finalizarVenda = async () => {
     if (carrinho.length === 0 || carregando) return;
     
+    const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
+
+    // Validação de Nota de Crédito/Devolução
+    if (docConfig.abateStock === 'repor' && !refDocOrigem) {
+        avisar?.("INDIQUE O DOCUMENTO DE ORIGEM", "erro");
+        return;
+    }
+
     if (metodo === 'Dívida (Fiado)' && !nomeCliente) {
         avisar?.("CLIENTE OBRIGATÓRIO PARA FIADO", "erro");
         return;
@@ -103,12 +119,16 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
 
     setCarregando(true);
     const batch = writeBatch(db);
-    const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
     
     try {
       const agora = new Date();
       const vendaRef = doc(collection(db, "vendas"));
       
+      // Formatação precisa de tempo: Hora, Minuto, Segundo
+      const horaHms = agora.getHours().toString().padStart(2, '0') + ":" + 
+                      agora.getMinutes().toString().padStart(2, '0') + ":" + 
+                      agora.getSeconds().toString().padStart(2, '0');
+
       const dadosVenda = {
         id: vendaRef.id,
         empresaId,
@@ -116,6 +136,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         vendedorNome: usuario.nome || "Vendedor",
         lojaNome: configLoja?.nomeLoja || "Minha Loja",
         tipoDocumento: tipoDoc,
+        documentoOrigem: (docConfig.abateStock === 'repor') ? refDocOrigem.toUpperCase() : null,
         infoAdicional: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
         clienteNuit: nuitCliente,
         clienteEndereco: enderecoCliente,
@@ -133,14 +154,13 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         metodo,
         status: metodo === 'Dívida (Fiado)' ? 'PENDENTE' : 'PAGO',
         referencia: referencia.toUpperCase(),
-        data: agora.toISOString(),
-        hora: agora.toLocaleTimeString('pt-PT'),
+        data: agora.toISOString().split('T')[0], 
+        hora: horaHms, // Salva HH:mm:ss
         timestamp: serverTimestamp()
       };
 
       batch.set(vendaRef, dadosVenda);
 
-      // Lógica de Stock Dinâmica
       if (docConfig.abateStock !== false) {
         carrinho.forEach(item => {
           const produtoRef = doc(db, "produtos", item.id);
@@ -165,7 +185,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     <>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-100px)] overflow-hidden">
         
-        {/* LADO ESQUERDO: CATÁLOGO */}
         <div className="flex-1 bg-slate-50 rounded-[2rem] flex flex-col overflow-hidden border border-slate-200">
           <div className="p-4 bg-white border-b shadow-sm flex gap-2">
             <div className="relative flex-1">
@@ -179,7 +198,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
               />
             </div>
             
-            {/* SELETOR DE DOCUMENTO */}
             <div className="relative min-w-[200px]">
               <FileText className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
               <select 
@@ -210,16 +228,13 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                   <p className="text-base font-black text-slate-900 italic tracking-tighter">
                     {Number(p.preco || 0).toFixed(2)} <small className="text-[9px] not-italic opacity-40">{moeda}</small>
                   </p>
-                  <div className="bg-blue-600 text-white p-1.5 rounded-lg">
-                    <Plus size={14} />
-                  </div>
+                  <div className="bg-blue-600 text-white p-1.5 rounded-lg"><Plus size={14} /></div>
                 </div>
               </button>
             ))}
           </div>
         </div>
 
-        {/* LADO DIREITO: CHECKOUT */}
         <div className="w-full lg:w-[420px] bg-white rounded-[2rem] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
           <div className="p-5 bg-slate-50 border-b">
             <div className="flex items-center gap-2 mb-3">
@@ -233,6 +248,20 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                 value={nomeCliente} 
                 onChange={e => setNomeCliente(e.target.value)} 
               />
+              
+              {/* CAMPO OBRIGATÓRIO PARA NOTA DE CRÉDITO / DEVOLUÇÃO */}
+              {(TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc).abateStock === 'repor') && (
+                <div className="flex items-center gap-2 bg-rose-50 border-2 border-rose-100 p-2 rounded-xl animate-in fade-in zoom-in duration-300">
+                  <ArrowLeftRight size={14} className="text-rose-500" />
+                  <input 
+                    className="flex-1 bg-transparent outline-none font-black text-[10px] text-rose-700 placeholder:text-rose-300 uppercase"
+                    placeholder="DOC. ORIGEM (EX: FR 2026/001)"
+                    value={refDocOrigem}
+                    onChange={e => setRefDocOrigem(e.target.value)}
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <input className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs text-center" placeholder="NUIT" value={nuitCliente} onChange={e => setNuitCliente(e.target.value)} />
                 <input className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs text-center" placeholder="Endereço" value={enderecoCliente} onChange={e => setEnderecoCliente(e.target.value)} />
@@ -259,9 +288,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                   </div>
                   <div className="text-right ml-4">
                     <p className="font-black text-slate-900 text-xs">{(item.qtd * Number(item.preco)).toFixed(2)}</p>
-                    <button onClick={() => setCarrinho(carrinho.filter(c => c.id !== item.id))} className="text-red-300">
-                      <Trash2 size={12}/>
-                    </button>
+                    <button onClick={() => setCarrinho(carrinho.filter(c => c.id !== item.id))} className="text-red-300"><Trash2 size={12}/></button>
                   </div>
                 </div>
               ))
@@ -269,7 +296,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
           </div>
 
           <div className="p-6 bg-slate-900 text-white rounded-t-[2.5rem]">
-            {/* MÉTODOS DE PAGAMENTO */}
             <div className="grid grid-cols-6 gap-2 mb-4">
               {Object.keys(CORES_METODOS).map(m => (
                 <button
@@ -314,6 +340,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
             setNomeCliente('');
             setDesconto('');
             setReferencia('');
+            setRefDocOrigem('');
           }} 
         />
       )}
