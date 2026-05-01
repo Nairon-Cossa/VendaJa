@@ -3,17 +3,35 @@ import { db } from '../firebase';
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
   Search, Trash2, CheckCircle2, Banknote, Smartphone, Plus, Minus, Clock, 
-  CreditCard, Building2, User, ShoppingBag, Inbox
+  CreditCard, Building2, User, ShoppingBag, Inbox, FileText, ArrowLeftRight
 } from 'lucide-react';
 import ReciboA4 from '../components/ReciboA4';
 
 const REGRAS_SETOR = {
-  'Mercearia': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR VENDA" },
-  'Restaurante/Bar': { labelExtra: "Mesa/Comando", placeholder: "Ex: Mesa 05", botaoAcao: "PAGAR AGORA" },
-  'Oficina': { labelExtra: "Viatura", placeholder: "Matrícula ou Modelo", botaoAcao: "PAGAR AGORA" },
-  'Farmácia': { labelExtra: "Paciente", placeholder: "Nome do Paciente", botaoAcao: "CONCLUIR VENDA" },
-  'Geral': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR VENDA" }
+  'Mercearia': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR" },
+  'Restaurante/Bar': { labelExtra: "Mesa/Comando", placeholder: "Ex: Mesa 05", botaoAcao: "PAGAR" },
+  'Oficina': { labelExtra: "Viatura", placeholder: "Matrícula ou Modelo", botaoAcao: "PAGAR" },
+  'Farmácia': { labelExtra: "Paciente", placeholder: "Nome do Paciente", botaoAcao: "CONCLUIR" },
+  'Geral': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR" }
 };
+
+// Configuração de comportamento por tipo de documento
+const TIPOS_DOCUMENTOS = [
+  { id: 'Venda a Dinheiro', abateStock: true, cor: 'text-emerald-500' },
+  { id: 'Factura', abateStock: true, cor: 'text-blue-500' },
+  { id: 'Factura Recibo', abateStock: true, cor: 'text-emerald-500' },
+  { id: 'Factura Pro-forma', abateStock: false, cor: 'text-orange-400' },
+  { id: 'Factura Imobilizado', abateStock: true, cor: 'text-purple-500' },
+  { id: 'Orçamento', abateStock: false, cor: 'text-slate-400' },
+  { id: 'Pedido Orçamento', abateStock: false, cor: 'text-slate-400' },
+  { id: 'Proposta', abateStock: false, cor: 'text-slate-400' },
+  { id: 'Guia de Remessa', abateStock: true, cor: 'text-indigo-500' },
+  { id: 'Guia de Transporte', abateStock: true, cor: 'text-indigo-500' },
+  { id: 'Nota de Crédito', abateStock: 'repor', cor: 'text-red-500' }, // Repõe stock
+  { id: 'Nota de Débito', abateStock: true, cor: 'text-red-700' },
+  { id: 'Devolução', abateStock: 'repor', cor: 'text-rose-500' },
+  { id: 'Devolução a Dinheiro', abateStock: 'repor', cor: 'text-rose-600' },
+];
 
 const CORES_METODOS = {
   'Dinheiro': 'bg-emerald-600 border-emerald-600',
@@ -28,6 +46,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const [carrinho, setCarrinho] = useState([]);
   const [pesquisa, setPesquisa] = useState('');
   const [metodo, setMetodo] = useState('Dinheiro');
+  const [tipoDoc, setTipoDoc] = useState('Venda a Dinheiro');
   const [referencia, setReferencia] = useState('');
   const [desconto, setDesconto] = useState('');
   const [aplicarIva, setAplicarIva] = useState(false);
@@ -40,7 +59,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const inputPesquisa = useRef(null);
   const config = REGRAS_SETOR[usuario?.tipoNegocio] || REGRAS_SETOR['Geral'];
   const moeda = configLoja?.moeda || 'MT';
-
   const empresaId = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
   const subtotal = carrinho.reduce((acc, item) => acc + (Number(item.preco || 0) * item.qtd), 0);
@@ -59,9 +77,11 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const adicionarAoCarrinho = (p) => {
     const itemNoCarrinho = carrinho.find(item => item.id === p.id);
     const stockDisponivel = Number(p.stock || 0);
+    const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
 
-    if (stockDisponivel <= (itemNoCarrinho?.qtd || 0)) {
-      avisar?.("STOCK ESGOTADO OU INSUFICIENTE", "erro");
+    // Só valida stock se o documento for do tipo que abate stock
+    if (docConfig.abateStock === true && stockDisponivel <= (itemNoCarrinho?.qtd || 0)) {
+      avisar?.("STOCK INSUFICIENTE", "erro");
       return;
     }
     
@@ -73,31 +93,17 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     setPesquisa(''); 
   };
 
-  const removerOuDiminuir = (id) => {
-    const item = carrinho.find(i => i.id === id);
-    if (!item) return;
-    if (item.qtd > 1) {
-      setCarrinho(carrinho.map(i => i.id === id ? { ...i, qtd: i.qtd - 1 } : i));
-    } else {
-      setCarrinho(carrinho.filter(i => i.id !== id));
-    }
-  };
-
   const finalizarVenda = async () => {
     if (carrinho.length === 0 || carregando) return;
     
     if (metodo === 'Dívida (Fiado)' && !nomeCliente) {
-        avisar?.("NOME DO CLIENTE OBRIGATÓRIO PARA FIADO", "erro");
-        return;
-    }
-
-    if (['M-Pesa', 'e-Mola', 'Transferência'].includes(metodo) && !referencia) {
-        avisar?.(`INSIRA A REFERÊNCIA DO PAGAMENTO`, "erro");
+        avisar?.("CLIENTE OBRIGATÓRIO PARA FIADO", "erro");
         return;
     }
 
     setCarregando(true);
     const batch = writeBatch(db);
+    const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
     
     try {
       const agora = new Date();
@@ -105,11 +111,11 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
       
       const dadosVenda = {
         id: vendaRef.id,
-        empresaId: empresaId,
-        lojaId: empresaId,
+        empresaId,
         vendedorId: usuario.uid,
         vendedorNome: usuario.nome || "Vendedor",
-        lojaNome: usuario.nomeLoja || "Minha Loja",
+        lojaNome: configLoja?.nomeLoja || "Minha Loja",
+        tipoDocumento: tipoDoc,
         infoAdicional: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
         clienteNuit: nuitCliente,
         clienteEndereco: enderecoCliente,
@@ -128,35 +134,24 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         status: metodo === 'Dívida (Fiado)' ? 'PENDENTE' : 'PAGO',
         referencia: referencia.toUpperCase(),
         data: agora.toISOString(),
-        hora: agora.toLocaleTimeString('pt-PT'), // REGISTA HORA:MINUTO:SEGUNDO PARA SEGURANÇA
+        hora: agora.toLocaleTimeString('pt-PT'),
         timestamp: serverTimestamp()
       };
 
       batch.set(vendaRef, dadosVenda);
 
-      if (metodo === 'Dívida (Fiado)') {
-        const fiadoRef = doc(collection(db, "fiados"));
-        batch.set(fiadoRef, {
-            empresaId: empresaId,
-            lojaId: empresaId,
-            vendaId: vendaRef.id,
-            clienteNome: nomeCliente.toUpperCase(),
-            valorTotal: totalFinal,
-            valorPago: 0,
-            status: 'pendente',
-            dataCriacao: serverTimestamp()
+      // Lógica de Stock Dinâmica
+      if (docConfig.abateStock !== false) {
+        carrinho.forEach(item => {
+          const produtoRef = doc(db, "produtos", item.id);
+          const fator = docConfig.abateStock === 'repor' ? item.qtd : -item.qtd;
+          batch.update(produtoRef, { stock: increment(fator) });
         });
       }
 
-      carrinho.forEach(item => {
-        const produtoRef = doc(db, "produtos", item.id);
-        batch.update(produtoRef, { stock: increment(-item.qtd) });
-      });
-
       await batch.commit();
-
       setVendaFinalizada(dadosVenda);
-      avisar?.("VENDA REGISTADA!", "sucesso");
+      avisar?.(`${tipoDoc.toUpperCase()} REGISTADO!`, "sucesso");
 
     } catch (error) {
       console.error(error);
@@ -170,55 +165,61 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     <>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-100px)] overflow-hidden">
         
-        {/* LADO ESQUERDO: PRODUTOS */}
+        {/* LADO ESQUERDO: CATÁLOGO */}
         <div className="flex-1 bg-slate-50 rounded-[2rem] flex flex-col overflow-hidden border border-slate-200">
-          <div className="p-4 bg-white border-b shadow-sm">
-            <div className="relative">
+          <div className="p-4 bg-white border-b shadow-sm flex gap-2">
+            <div className="relative flex-1">
               <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input 
                 ref={inputPesquisa}
                 className="w-full bg-slate-100 p-4 pl-14 rounded-2xl outline-none font-bold text-slate-700 focus:bg-white focus:ring-2 ring-blue-100 transition-all border-2 border-transparent focus:border-blue-400"
-                placeholder="Pesquisar produto ou código..."
+                placeholder="Pesquisar produto..."
                 value={pesquisa}
                 onChange={e => setPesquisa(e.target.value)}
               />
             </div>
+            
+            {/* SELETOR DE DOCUMENTO */}
+            <div className="relative min-w-[200px]">
+              <FileText className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500" size={18} />
+              <select 
+                value={tipoDoc}
+                onChange={(e) => setTipoDoc(e.target.value)}
+                className="w-full bg-blue-50 border-2 border-blue-100 p-4 pl-12 rounded-2xl outline-none font-black text-[10px] uppercase text-blue-700 appearance-none cursor-pointer"
+              >
+                {TIPOS_DOCUMENTOS.map(d => (
+                  <option key={d.id} value={d.id}>{d.id}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 custom-scrollbar">
-            {produtosDaLoja.length === 0 ? (
-              <div className="col-span-full flex flex-col items-center justify-center py-20 opacity-20">
-                 <Inbox size={60} />
-                 <p className="font-black uppercase text-xs mt-4">Nenhum produto encontrado</p>
-              </div>
-            ) : (
-              produtosDaLoja.map(p => (
-                <button 
-                  key={p.id} 
-                  onClick={() => adicionarAoCarrinho(p)} 
-                  disabled={Number(p.stock || 0) <= 0}
-                  className={`group p-3 rounded-[1.5rem] border-2 transition-all text-left flex flex-col justify-between h-36 ${Number(p.stock || 0) <= 0 ? 'bg-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-transparent hover:border-blue-500 hover:shadow-lg shadow-sm active:scale-95'}`}
-                >
-                  <div>
-                    <span className="text-[7px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{p.categoria || 'Geral'}</span>
-                    <h4 className="font-black text-slate-800 text-[11px] uppercase leading-tight line-clamp-2 mt-1">{p.nome}</h4>
-                    <p className="text-[9px] font-bold text-slate-400 mt-1">Stock: {p.stock}</p>
+            {produtosDaLoja.map(p => (
+              <button 
+                key={p.id} 
+                onClick={() => adicionarAoCarrinho(p)} 
+                className="group p-3 rounded-[1.5rem] bg-white border-2 border-transparent hover:border-blue-500 hover:shadow-lg transition-all text-left flex flex-col justify-between h-36 active:scale-95 shadow-sm"
+              >
+                <div>
+                  <span className="text-[7px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-widest">{p.categoria || 'Geral'}</span>
+                  <h4 className="font-black text-slate-800 text-[11px] uppercase leading-tight line-clamp-2 mt-1">{p.nome}</h4>
+                  <p className="text-[9px] font-bold text-slate-400 mt-1">Stock: {p.stock}</p>
+                </div>
+                <div className="flex items-end justify-between">
+                  <p className="text-base font-black text-slate-900 italic tracking-tighter">
+                    {Number(p.preco || 0).toFixed(2)} <small className="text-[9px] not-italic opacity-40">{moeda}</small>
+                  </p>
+                  <div className="bg-blue-600 text-white p-1.5 rounded-lg">
+                    <Plus size={14} />
                   </div>
-                  <div className="flex items-end justify-between">
-                    <p className="text-base font-black text-slate-900 italic tracking-tighter">
-                      {Number(p.preco || 0).toFixed(2)} <small className="text-[9px] not-italic opacity-40">{moeda}</small>
-                    </p>
-                    <div className="bg-blue-600 text-white p-1.5 rounded-lg">
-                      <Plus size={14} />
-                    </div>
-                  </div>
-                </button>
-              ))
-            )}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* LADO DIREITO: CARRINHO */}
+        {/* LADO DIREITO: CHECKOUT */}
         <div className="w-full lg:w-[420px] bg-white rounded-[2rem] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
           <div className="p-5 bg-slate-50 border-b">
             <div className="flex items-center gap-2 mb-3">
@@ -233,27 +234,17 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                 onChange={e => setNomeCliente(e.target.value)} 
               />
               <div className="grid grid-cols-2 gap-2">
-                <input 
-                  className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs text-center"
-                  placeholder="NUIT"
-                  value={nuitCliente} 
-                  onChange={e => setNuitCliente(e.target.value)} 
-                />
-                <input 
-                  className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs text-center"
-                  placeholder="Endereço"
-                  value={enderecoCliente} 
-                  onChange={e => setEnderecoCliente(e.target.value)} 
-                />
+                <input className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs text-center" placeholder="NUIT" value={nuitCliente} onChange={e => setNuitCliente(e.target.value)} />
+                <input className="bg-white p-3 rounded-xl border border-slate-200 outline-none focus:border-blue-500 font-bold text-xs text-center" placeholder="Endereço" value={enderecoCliente} onChange={e => setEnderecoCliente(e.target.value)} />
               </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-white">
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
             {carrinho.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-200 grayscale opacity-50">
+              <div className="h-full flex flex-col items-center justify-center text-slate-200 opacity-50">
                 <ShoppingBag size={40} className="mb-2" />
-                <p className="font-black uppercase text-[9px]">Aguardando Itens</p>
+                <p className="font-black uppercase text-[9px]">Carrinho Vazio</p>
               </div>
             ) : (
               carrinho.map((item, i) => (
@@ -264,12 +255,11 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                       <button onClick={() => removerOuDiminuir(item.id)} className="text-slate-400 hover:text-red-500"><Minus size={12}/></button>
                       <span className="text-xs font-black text-blue-600 w-6 text-center">{item.qtd}</span>
                       <button onClick={() => adicionarAoCarrinho(item)} className="text-slate-400 hover:text-blue-500"><Plus size={12}/></button>
-                      <span className="text-[9px] font-bold text-slate-400 ml-2">x {Number(item.preco).toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="text-right ml-4">
                     <p className="font-black text-slate-900 text-xs">{(item.qtd * Number(item.preco)).toFixed(2)}</p>
-                    <button onClick={() => setCarrinho(carrinho.filter(c => c.id !== item.id))} className="text-red-300 hover:text-red-500">
+                    <button onClick={() => setCarrinho(carrinho.filter(c => c.id !== item.id))} className="text-red-300">
                       <Trash2 size={12}/>
                     </button>
                   </div>
@@ -279,53 +269,36 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
           </div>
 
           <div className="p-6 bg-slate-900 text-white rounded-t-[2.5rem]">
+            {/* MÉTODOS DE PAGAMENTO */}
             <div className="grid grid-cols-6 gap-2 mb-4">
-              {[
-                { id: 'Dinheiro', icon: <Banknote size={14}/> },
-                { id: 'M-Pesa', icon: <Smartphone size={14}/> },
-                { id: 'e-Mola', icon: <Smartphone size={14}/> },
-                { id: 'Cartão', icon: <CreditCard size={14}/> },
-                { id: 'Transferência', icon: <Building2 size={14}/> },
-                { id: 'Dívida (Fiado)', icon: <Clock size={14}/> }
-              ].map(m => (
+              {Object.keys(CORES_METODOS).map(m => (
                 <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setMetodo(m.id)}
-                  className={`flex flex-col items-center justify-center py-2 rounded-xl border-2 transition-all ${metodo === m.id ? `${CORES_METODOS[m.id]} text-white border-transparent` : 'border-white/10 text-white/30 hover:border-white/30'}`}
+                  key={m}
+                  onClick={() => setMetodo(m)}
+                  className={`flex flex-col items-center justify-center py-2 rounded-xl border-2 transition-all ${metodo === m ? `${CORES_METODOS[m]} text-white border-transparent` : 'border-white/10 text-white/30 hover:border-white/30'}`}
                 >
-                  {m.icon}
-                  <span className="text-[6px] font-black uppercase mt-1">{m.id.substring(0, 5)}</span>
+                  <span className="text-[6px] font-black uppercase">{m.substring(0, 6)}</span>
                 </button>
               ))}
             </div>
 
             <div className="grid grid-cols-2 gap-2 mb-4">
-               <button type="button" onClick={() => setAplicarIva(!aplicarIva)} className={`p-2 rounded-xl border text-[10px] font-black transition-all ${aplicarIva ? 'bg-blue-600 border-blue-600' : 'bg-white/5 border-white/10 text-white/40'}`}>+ IVA (16%)</button>
+               <button onClick={() => setAplicarIva(!aplicarIva)} className={`p-2 rounded-xl border text-[10px] font-black ${aplicarIva ? 'bg-blue-600 border-blue-600' : 'bg-white/5 border-white/10 text-white/40'}`}>+ IVA (16%)</button>
                <input type="number" placeholder="Desconto" className="bg-white/5 border border-white/10 p-2 rounded-xl text-white font-bold text-[10px] outline-none" value={desconto} onChange={e => setDesconto(e.target.value)} />
             </div>
 
-            {['M-Pesa', 'e-Mola', 'Transferência'].includes(metodo) && (
-              <input 
-                className="w-full bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-blue-300 font-black text-[10px] outline-none uppercase mb-4"
-                placeholder="REFERÊNCIA DO PAGAMENTO"
-                value={referencia}
-                onChange={e => setReferencia(e.target.value)}
-              />
-            )}
-
             <div className="flex justify-between items-end mb-4 border-t border-white/10 pt-4">
-              <div className="text-white/30 uppercase font-black text-[9px]">Total a Cobrar</div>
+              <div className="text-white/30 uppercase font-black text-[9px]">Total {tipoDoc}</div>
               <div className="text-3xl font-black italic tracking-tighter tabular-nums">{totalFinal.toFixed(2)} <small className="text-xs not-italic">{moeda}</small></div>
             </div>
 
             <button 
                 onClick={finalizarVenda}
                 disabled={carrinho.length === 0 || carregando}
-                className={`w-full py-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-widest ${carrinho.length === 0 || carregando ? 'bg-white/5 text-white/10' : 'bg-blue-600 hover:bg-blue-500 active:scale-95 shadow-xl shadow-blue-900/20'}`}
+                className={`w-full py-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-widest ${carrinho.length === 0 || carregando ? 'bg-white/5 text-white/10' : 'bg-blue-600 hover:bg-blue-500 shadow-xl'}`}
             >
               {carregando ? <Clock className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
-              {metodo === 'Dívida (Fiado)' ? 'REGISTAR DÍVIDA' : config.botaoAcao}
+              {metodo === 'Dívida (Fiado)' ? 'REGISTAR DÍVIDA' : `EMITIR ${tipoDoc}`}
             </button>
           </div>
         </div>
@@ -341,7 +314,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
             setNomeCliente('');
             setDesconto('');
             setReferencia('');
-            inputPesquisa.current?.focus();
           }} 
         />
       )}

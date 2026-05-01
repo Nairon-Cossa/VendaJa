@@ -41,7 +41,10 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
 
         <div className="text-right">
           <div className="bg-slate-900 text-white px-10 py-5 rounded-3xl inline-block mb-6 shadow-xl shadow-slate-200 print:shadow-none">
-            <h2 className="text-3xl font-black uppercase tracking-widest leading-none">Factura</h2>
+            {/* TÍTULO DINÂMICO AQUI */}
+            <h2 className="text-3xl font-black uppercase tracking-widest leading-none">
+                {venda.tipoDocumento || "Factura"}
+            </h2>
             <p className="text-[11px] font-black opacity-70 uppercase tracking-[0.4em] mt-2 text-center border-t border-white/20 pt-2">{tipo}</p>
           </div>
           <div className="space-y-1">
@@ -58,7 +61,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
       </div>
 
       <div className="p-12 pt-10 flex-grow">
-        {/* ÁREA DO CLIENTE COM DESIGN DE CARTÃO */}
+        {/* ÁREA DO CLIENTE */}
         <div className="grid grid-cols-12 gap-6 mb-12">
           <div className="col-span-8 bg-slate-50 rounded-[2.5rem] p-8 border border-slate-100 relative overflow-hidden">
              <div className="absolute top-0 right-0 p-4 opacity-5">
@@ -73,6 +76,9 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
              <p className="text-xs font-black text-slate-500 uppercase tracking-widest bg-white/50 inline-block px-3 py-1 rounded-full border border-slate-200">
                 NUIT: {venda.clienteNuit || "--- --- ---"}
              </p>
+             {venda.clienteEndereco && (
+                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 ml-1 italic">{venda.clienteEndereco}</p>
+             )}
           </div>
           <div className="col-span-4 bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col justify-center items-center">
              <p className="text-[10px] font-black opacity-50 uppercase tracking-[0.3em] mb-2">Moeda de Liquidação</p>
@@ -80,7 +86,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
           </div>
         </div>
 
-        {/* TABELA DE ITENS PROFISSIONAL */}
+        {/* TABELA DE ITENS */}
         <div className="overflow-hidden rounded-[2rem] border border-slate-100 mb-12 shadow-sm">
           <table className="w-full border-collapse">
             <thead>
@@ -110,7 +116,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
         <div className="flex justify-between items-start gap-12">
           <div className="flex-grow space-y-6">
             <div className="bg-blue-50/50 border border-blue-100 px-8 py-6 rounded-[2rem]">
-               <p className="text-[10px] font-black text-blue-600 uppercase mb-2 tracking-[0.2em]">Condições de Pagamento</p>
+               <p className="text-[10px] font-black text-blue-600 uppercase mb-2 tracking-[0.2em]">Método / Condição</p>
                <div className="flex items-center gap-3">
                   <div className="bg-blue-600 text-white p-2 rounded-xl">
                     <CheckCircle2 size={16} />
@@ -120,7 +126,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
             </div>
             <div className="text-[11px] text-slate-400 font-bold uppercase tracking-widest leading-loose pl-2">
               <p className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-slate-300 rounded-full" /> {configLoja.mensagemRecibo || "Obrigado pela preferência!"}</p>
-              <p className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-slate-300 rounded-full" /> Software certificado pela Autoridade Tributária.</p>
+              <p className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-slate-300 rounded-full" /> Software certificado pela Autoridade Tributária - VendaJá Pro.</p>
             </div>
           </div>
 
@@ -128,9 +134,15 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
             <div className="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl shadow-slate-200 print:shadow-none relative overflow-hidden">
               <div className="relative z-10">
                 <div className="flex justify-between items-center mb-1 opacity-50">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Valor Bruto</span>
-                  <span className="text-sm font-black tabular-nums">{Number(venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Subtotal</span>
+                  <span className="text-sm font-black tabular-nums">{Number(venda.subtotal || venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
                 </div>
+                {venda.imposto > 0 && (
+                   <div className="flex justify-between items-center mb-1 opacity-50">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">IVA (16%)</span>
+                    <span className="text-sm font-black tabular-nums">{Number(venda.imposto).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
                 <div className="h-px bg-white/10 my-4"></div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-black uppercase tracking-[0.2em] italic">Total Geral</span>
@@ -146,7 +158,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
         </div>
       </div>
 
-      {/* RODAPÉ DE AUTENTICAÇÃO */}
+      {/* RODAPÉ */}
       <div className="p-12 pt-4 mt-auto">
         <div className="grid grid-cols-2 gap-20 text-center mb-12">
           <div>
@@ -172,13 +184,13 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
 
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-900/95 backdrop-blur-xl overflow-y-auto pt-10 pb-20 print:p-0 print:bg-white">
-      {/* BOTÕES DE CONTROLO */}
       <div className="fixed top-8 right-12 flex gap-4 print:hidden z-[10000]">
         <button 
           onClick={imprimir}
           className="bg-blue-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-blue-700 flex items-center gap-3 transition-all active:scale-95 group"
         >
-          <Printer size={20} className="group-hover:rotate-12 transition-transform"/> Imprimir Factura
+          <Printer size={20} className="group-hover:rotate-12 transition-transform"/> 
+          Imprimir {venda.tipoDocumento || 'Documento'}
         </button>
         <button 
           onClick={fechar}
@@ -188,14 +200,12 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
         </button>
       </div>
 
-      {/* CONTENTOR DE IMPRESSÃO */}
       <div className="print:m-0 print:p-0">
         <DocumentoPagina tipo="Original" />
         <div className="print:break-after-page mb-20 print:mb-0"></div>
         <DocumentoPagina tipo="Duplicado (Contabilidade)" />
       </div>
 
-      {/* ESTILOS CRÍTICOS PARA PDF PERFEITO */}
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         
@@ -229,7 +239,6 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
           print-color-adjust: exact;
         }
 
-        /* Prevenir que o navegador adicione headers/footers dele */
         @page { margin: 0; }
       `}} />
     </div>
