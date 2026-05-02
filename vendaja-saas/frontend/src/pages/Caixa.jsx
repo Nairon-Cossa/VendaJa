@@ -49,7 +49,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const [referencia, setReferencia] = useState('');
   const [refDocOrigem, setRefDocOrigem] = useState(''); 
   const [desconto, setDesconto] = useState('');
-  const [valorPago, setValorPago] = useState(''); // NOVO: Controlar pagamentos parciais
+  const [valorPago, setValorPago] = useState('');
   const [aplicarIva, setAplicarIva] = useState(false);
   const [nomeCliente, setNomeCliente] = useState('');
   const [nuitCliente, setNuitCliente] = useState('');
@@ -143,12 +143,10 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         tipoDocumento: tipoDoc,
         documentoOrigem: (docConfig.abateStock === 'repor') ? refDocOrigem.toUpperCase() : null,
         
-        // Dados do Cliente
         clienteNome: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
         clienteNuit: nuitCliente,
         clienteEndereco: enderecoCliente,
         
-        // Itens e Valores
         itens: carrinho.map(item => ({
           id: item.id,
           nome: item.nome,
@@ -161,7 +159,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         imposto: valorIva,
         total: totalFinal,
         
-        // Lógica de Pagamento
         metodo,
         valorPago: numValorPago,
         troco: troco,
@@ -174,10 +171,8 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         timestamp: serverTimestamp()
       };
 
-      // 1. GRAVAR A VENDA
       batch.set(vendaRef, dadosVenda);
 
-      // 2. ATUALIZAR STOCK
       if (docConfig.abateStock !== false) {
         carrinho.forEach(item => {
           const produtoRef = doc(db, "produtos", item.id);
@@ -186,9 +181,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         });
       }
 
-      // 3. REGISTAR/ATUALIZAR CLIENTE PARA ESTATÍSTICAS E DÍVIDAS
       if (nomeCliente) {
-        // Usa NUIT ou Nome formatado como ID para agrupar as compras da mesma pessoa/empresa
         const idBase = nuitCliente || nomeCliente.trim().replace(/\s+/g, '_').toLowerCase();
         const clienteRef = doc(db, "clientes", `${empresaId}_${idBase}`);
         
@@ -198,10 +191,10 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
           nome: nomeCliente.toUpperCase(),
           nuit: nuitCliente,
           endereco: enderecoCliente,
-          totalGasto: increment(totalFinal), // Tudo que comprou
-          totalPago: increment(numValorPago), // Tudo que já pagou
-          totalDivida: increment(saldoDevedor), // Tudo que falta pagar
-          frequenciaCompras: increment(1), // Quantas vezes já comprou
+          totalGasto: increment(totalFinal),
+          totalPago: increment(numValorPago),
+          totalDivida: increment(saldoDevedor),
+          frequenciaCompras: increment(1),
           ultimaCompra: agora.toISOString(),
           atualizadoEm: serverTimestamp()
         }, { merge: true });
@@ -354,7 +347,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                <input type="number" placeholder="Desconto (MT)" className="bg-white/5 border border-white/10 p-2 rounded-xl text-white font-bold text-[10px] outline-none" value={desconto} onChange={e => setDesconto(e.target.value)} />
             </div>
 
-            {/* SECÇÃO DE PAGAMENTO PARCIAL E TROCO */}
             <div className="bg-white/5 rounded-xl p-3 mb-4 space-y-2 border border-white/10">
                 <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-white/50">VALOR PAGO ({moeda})</span>
