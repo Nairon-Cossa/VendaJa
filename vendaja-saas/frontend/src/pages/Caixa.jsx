@@ -69,7 +69,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const valorIva = aplicarIva ? (baseTributavel * 0.16) : 0;
   const totalFinal = baseTributavel + valorIva;
 
-  // Lógica de Pagamento Parcial
   const numValorPago = valorPago === '' ? (metodo === 'Dívida (Fiado)' ? 0 : totalFinal) : Number(valorPago);
   const troco = Math.max(0, numValorPago - totalFinal);
   const saldoDevedor = Math.max(0, totalFinal - numValorPago);
@@ -108,15 +107,33 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     }
   };
 
-  const finalizarVenda = async () => {
-    if (carrinho.length === 0 || carregando) return;
+  // --- NOVA FUNÇÃO DE EDIÇÃO MANUAL ---
+  const atualizarQtdManual = (id, valor) => {
+    const novaQtd = parseInt(valor);
+    if (isNaN(novaQtd) || novaQtd < 0) return; // Permite 0 para o caso de querer apagar e digitar
 
-    // --- NOVA VALIDAÇÃO DE SEGURANÇA ---
-    if (!empresaId) {
-        avisar?.("ERRO: ID DA EMPRESA NÃO ENCONTRADO. Por favor, recarregue a página.", "erro");
+    const itemNoCarrinho = carrinho.find(item => item.id === id);
+    const produtoOriginal = produtos.find(p => p.id === id);
+    const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
+
+    if (docConfig.abateStock === true && produtoOriginal && novaQtd > Number(produtoOriginal.stock)) {
+        avisar?.("STOCK INSUFICIENTE", "erro");
         return;
     }
-    // -----------------------------------
+
+    if (novaQtd === 0) {
+        setCarrinho(carrinho.filter(i => i.id !== id));
+    } else {
+        setCarrinho(carrinho.map(i => i.id === id ? { ...i, qtd: novaQtd } : i));
+    }
+  };
+
+  const finalizarVenda = async () => {
+    if (carrinho.length === 0 || carregando) return;
+    if (!empresaId) {
+        avisar?.("ERRO: ID DA EMPRESA NÃO ENCONTRADO", "erro");
+        return;
+    }
     
     const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
 
@@ -136,7 +153,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     try {
       const agora = new Date();
       const vendaRef = doc(collection(db, "vendas"));
-      
       const horaHms = agora.getHours().toString().padStart(2, '0') + ":" + 
                       agora.getMinutes().toString().padStart(2, '0') + ":" + 
                       agora.getSeconds().toString().padStart(2, '0');
@@ -149,11 +165,9 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         lojaNome: configLoja?.nomeLoja || "Minha Loja",
         tipoDocumento: tipoDoc,
         documentoOrigem: (docConfig.abateStock === 'repor') ? refDocOrigem.toUpperCase() : null,
-        
         clienteNome: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
         clienteNuit: nuitCliente,
         clienteEndereco: enderecoCliente,
-        
         itens: carrinho.map(item => ({
           id: item.id,
           nome: item.nome,
@@ -165,13 +179,11 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         desconto: valorDesconto,
         imposto: valorIva,
         total: totalFinal,
-        
         metodo,
         valorPago: numValorPago,
         troco: troco,
         saldoDevedor: saldoDevedor,
         status: saldoDevedor > 0 ? 'PENDENTE' : 'PAGO',
-        
         referencia: referencia.toUpperCase(),
         data: agora.toISOString().split('T')[0], 
         hora: horaHms,
@@ -191,7 +203,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
       if (nomeCliente) {
         const idBase = nuitCliente || nomeCliente.trim().replace(/\s+/g, '_').toLowerCase();
         const clienteRef = doc(db, "clientes", `${empresaId}_${idBase}`);
-        
         batch.set(clienteRef, {
           id: `${empresaId}_${idBase}`,
           empresaId,
@@ -205,14 +216,12 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
           ultimaCompra: agora.toISOString(),
           atualizadoEm: serverTimestamp()
         }, { merge: true });
-
         dadosVenda.clienteId = clienteRef.id;
       }
 
       await batch.commit();
       setVendaFinalizada(dadosVenda);
       avisar?.(`${tipoDoc.toUpperCase()} REGISTADO!`, "sucesso");
-
     } catch (error) {
       console.error(error);
       avisar?.("ERRO NO PROCESSAMENTO", "erro");
@@ -225,7 +234,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     <>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-100px)] overflow-hidden">
         
-        {/* Lado Esquerdo - Produtos */}
+        {/* Lado Esquerdo - Lista de Produtos */}
         <div className="flex-1 bg-slate-50 rounded-[2rem] flex flex-col overflow-hidden border border-slate-200">
           <div className="p-4 bg-white border-b shadow-sm flex gap-2">
             <div className="relative flex-1">
@@ -292,7 +301,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
               />
               
               {(TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc).abateStock === 'repor') && (
-                <div className="flex items-center gap-2 bg-rose-50 border-2 border-rose-100 p-2 rounded-xl animate-in fade-in zoom-in duration-300">
+                <div className="flex items-center gap-2 bg-rose-50 border-2 border-rose-100 p-2 rounded-xl">
                   <ArrowLeftRight size={14} className="text-rose-500" />
                   <input 
                     className="flex-1 bg-transparent outline-none font-black text-[10px] text-rose-700 placeholder:text-rose-300 uppercase"
@@ -323,7 +332,15 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                     <p className="font-black text-slate-800 text-[10px] uppercase truncate">{item.nome}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <button onClick={() => removerOuDiminuir(item.id)} className="text-slate-400 hover:text-red-500"><Minus size={12}/></button>
-                      <span className="text-xs font-black text-blue-600 w-6 text-center">{item.qtd}</span>
+                      
+                      {/* INPUT MANUAL AQUI */}
+                      <input 
+                        type="number"
+                        className="text-xs font-black text-blue-600 w-12 text-center bg-white border border-slate-200 rounded-md outline-none focus:border-blue-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        value={item.qtd}
+                        onChange={(e) => atualizarQtdManual(item.id, e.target.value)}
+                      />
+
                       <button onClick={() => adicionarAoCarrinho(item)} className="text-slate-400 hover:text-blue-500"><Plus size={12}/></button>
                     </div>
                   </div>
