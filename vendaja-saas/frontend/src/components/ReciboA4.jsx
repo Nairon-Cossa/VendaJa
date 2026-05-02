@@ -1,58 +1,64 @@
-import React from 'react';
-import { Printer, X, User, Building2, ShieldCheck, Globe, Phone, FileText, CheckCircle2 } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { 
+  Printer, X, User, Building2, ShieldCheck, 
+  Globe, Phone, FileText, CheckCircle2 
+} from 'lucide-react';
 
 const ReciboA4 = ({ venda, configLoja, fechar }) => {
   const moeda = configLoja.moeda || 'MT';
 
-  const imprimir = () => {
-    window.print();
-  };
+  // Resolve o problema do ecrã vazio ao abrir a impressão
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      window.print();
+    }, 800); // Tempo seguro para renderização completa e carregamento de fontes/imagens
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!venda) return null;
 
   const DocumentoPagina = ({ tipo }) => (
-    <div className="documento-a4 flex flex-col bg-white shadow-none print:shadow-none print:border-none border-x border-slate-100 mx-auto overflow-hidden">
+    <div className="documento-a4 flex flex-col bg-white border-b border-slate-200 last:border-0 print:border-0 mx-auto overflow-hidden">
       
-      {/* CABEÇALHO REFINADO */}
-      <div className="p-12 pb-8 flex justify-between items-start border-b-[6px] border-slate-900">
-        <div className="flex gap-8 items-center">
+      {/* HEADER CORPORATIVO */}
+      <div className="p-12 pb-8 flex justify-between items-start border-b-2 border-slate-900">
+        <div className="flex gap-6 items-center">
           {configLoja.logoUrl || configLoja.logo ? (
             <img 
               src={configLoja.logoUrl || configLoja.logo} 
               alt="Logo" 
-              className="h-28 w-28 object-contain rounded-2xl" 
+              className="h-20 w-20 object-contain grayscale" 
             />
           ) : (
-            <div className="h-24 w-24 bg-slate-50 border-2 border-slate-200 rounded-3xl flex items-center justify-center text-slate-300">
-               <Building2 size={44} />
+            <div className="h-16 w-16 bg-slate-100 flex items-center justify-center text-slate-400 rounded">
+               <Building2 size={32} />
             </div>
           )}
-          <div className="space-y-2">
-            <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-900 leading-none">
-              {configLoja.nomeEmpresa || configLoja.nome || "A MINHA LOJA"}
+          <div className="space-y-1">
+            <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900 leading-none">
+              {configLoja.nomeEmpresa || configLoja.nome || "EMPRESA NÃO CONFIGURADA"}
             </h1>
-            <div className="text-[12px] font-bold text-slate-500 uppercase tracking-wide leading-relaxed">
-              <p className="flex items-center gap-2 font-black text-slate-700 underline decoration-blue-500/30 underline-offset-4">
-                <ShieldCheck size={14} className="text-blue-600"/> NUIT: {configLoja.nuit || "--- --- ---"}
-              </p>
-              <p className="flex items-center gap-2"><Globe size={13} className="text-slate-400"/> {configLoja.endereco || "Endereço não configurado"}</p>
-              <p className="flex items-center gap-2"><Phone size={13} className="text-slate-400"/> {configLoja.telefone || "Contacto não disponível"}</p>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider space-y-0.5">
+              <p className="text-slate-800 font-black">NUIT: {configLoja.nuit || "--- --- ---"}</p>
+              <p className="flex items-center gap-1.5"><Globe size={10}/> {configLoja.endereco || "Endereço Indisponível"}</p>
+              <p className="flex items-center gap-1.5"><Phone size={10}/> {configLoja.telefone || "Contacto Indisponível"}</p>
             </div>
           </div>
         </div>
 
         <div className="text-right">
-          <div className="bg-slate-900 text-white px-10 py-5 rounded-3xl inline-block mb-6 shadow-xl shadow-slate-200 print:shadow-none">
-            {/* TÍTULO DINÂMICO AQUI */}
-            <h2 className="text-3xl font-black uppercase tracking-widest leading-none">
+          <div className="inline-block border-2 border-slate-900 px-4 py-2 mb-4">
+            <h2 className="text-xl font-black uppercase tracking-widest leading-none">
                 {venda.tipoDocumento || "Factura"}
             </h2>
-            <p className="text-[11px] font-black opacity-70 uppercase tracking-[0.4em] mt-2 text-center border-t border-white/20 pt-2">{tipo}</p>
+            <p className="text-[9px] font-black opacity-60 uppercase tracking-[0.2em] mt-1 text-center border-t border-slate-200 pt-1">{tipo}</p>
           </div>
-          <div className="space-y-1">
-            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Documento Nº</p>
-            <p className="text-2xl font-black text-slate-900 tabular-nums"># {venda.id?.slice(-8).toUpperCase()}</p>
-            <div className="flex flex-col items-end mt-2 pt-2 border-t border-slate-100">
-              <p className="text-[11px] font-black text-slate-400 uppercase">Data de Emissão</p>
-              <p className="font-black text-slate-700 text-sm">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nº Documento</p>
+            <p className="text-lg font-black text-slate-900 tabular-nums"># {venda.id?.slice(-8).toUpperCase()}</p>
+            <div className="pt-1">
+              <p className="text-[10px] font-bold text-slate-400 uppercase">Data de Emissão</p>
+              <p className="font-black text-slate-700 text-xs">
                 {new Date(venda.timestamp?.seconds * 1000 || Date.now()).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'long', year: 'numeric' })}
               </p>
             </div>
@@ -60,51 +66,52 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
         </div>
       </div>
 
-      <div className="p-12 pt-10 flex-grow">
-        {/* ÁREA DO CLIENTE */}
-        <div className="grid grid-cols-12 gap-6 mb-12">
-          <div className="col-span-8 bg-slate-50 rounded-[2.5rem] p-8 border border-slate-100 relative overflow-hidden">
-             <div className="absolute top-0 right-0 p-4 opacity-5">
-                <User size={80} />
-             </div>
-             <h3 className="text-[11px] font-black uppercase text-blue-600 mb-4 tracking-[0.25em] flex items-center gap-2">
-                <User size={14}/> Dados do Cliente
-             </h3>
-             <p className="text-2xl font-black text-slate-900 uppercase leading-none mb-2">
-                {venda.clienteNome || venda.infoAdicional || "Consumidor Final"}
+      <div className="p-12 pt-8 flex-grow">
+        {/* CLIENTE E INFOS */}
+        <div className="grid grid-cols-12 gap-8 mb-10">
+          <div className="col-span-7 border-l-4 border-slate-900 pl-6 py-1">
+             <h3 className="text-[9px] font-black uppercase text-slate-400 mb-2 tracking-widest">Facturar a:</h3>
+             <p className="text-lg font-black text-slate-900 uppercase leading-none mb-1">
+                {venda.clienteNome || "Consumidor Final"}
              </p>
-             <p className="text-xs font-black text-slate-500 uppercase tracking-widest bg-white/50 inline-block px-3 py-1 rounded-full border border-slate-200">
+             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                 NUIT: {venda.clienteNuit || "--- --- ---"}
              </p>
              {venda.clienteEndereco && (
-                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 ml-1 italic">{venda.clienteEndereco}</p>
+                <p className="text-[9px] font-medium text-slate-400 uppercase mt-1 italic">{venda.clienteEndereco}</p>
              )}
           </div>
-          <div className="col-span-4 bg-slate-900 rounded-[2.5rem] p-8 text-white flex flex-col justify-center items-center">
-             <p className="text-[10px] font-black opacity-50 uppercase tracking-[0.3em] mb-2">Moeda de Liquidação</p>
-             <p className="text-4xl font-black">{moeda}</p>
+          <div className="col-span-5 grid grid-cols-2 gap-4 border border-slate-100 p-4 rounded-lg bg-slate-50/50">
+             <div>
+                <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Moeda</p>
+                <p className="text-sm font-black text-slate-900">{moeda}</p>
+             </div>
+             <div>
+                <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Pagamento</p>
+                <p className="text-sm font-black text-slate-900 uppercase italic text-[10px]">{venda.metodo || "Numerário"}</p>
+             </div>
           </div>
         </div>
 
-        {/* TABELA DE ITENS */}
-        <div className="overflow-hidden rounded-[2rem] border border-slate-100 mb-12 shadow-sm">
-          <table className="w-full border-collapse">
+        {/* TABELA DE ITENS - CLEAN */}
+        <div className="mb-10">
+          <table className="w-full">
             <thead>
-              <tr className="bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em]">
-                <th className="py-6 px-8 text-left">Descrição do Item</th>
-                <th className="py-6 px-6 text-center">Qtd</th>
-                <th className="py-6 px-6 text-right">Preço Unit.</th>
-                <th className="py-6 px-8 text-right bg-slate-800">Subtotal</th>
+              <tr className="border-b-2 border-slate-900 text-[10px] font-black uppercase tracking-wider text-slate-900">
+                <th className="py-3 px-2 text-left">Descrição</th>
+                <th className="py-3 px-2 text-center w-20">Qtd</th>
+                <th className="py-3 px-2 text-right w-32">P. Unitário</th>
+                <th className="py-3 px-2 text-right w-32">Total Item</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {venda.itens.map((item, idx) => (
-                <tr key={idx} className="text-[12px] font-bold text-slate-700 hover:bg-slate-50 transition-colors">
-                  <td className="py-6 px-8 uppercase tracking-tight font-black text-slate-900">{item.nome}</td>
-                  <td className="py-6 px-6 text-center text-slate-500 font-black tabular-nums">{item.quantidade || item.qtd}</td>
-                  <td className="py-6 px-6 text-right tabular-nums">{(item.precoUnitario || item.preco).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</td>
-                  <td className="py-6 px-8 text-right font-black text-slate-900 bg-slate-50/50 tabular-nums">
-                      { ((item.quantidade || item.qtd) * (item.precoUnitario || item.preco)).toLocaleString('pt-MZ', { minimumFractionDigits: 2 }) }
+                <tr key={idx} className="text-[11px] font-bold text-slate-700">
+                  <td className="py-4 px-2 uppercase text-slate-900 font-black">{item.nome}</td>
+                  <td className="py-4 px-2 text-center tabular-nums">{item.qtd}</td>
+                  <td className="py-4 px-2 text-right tabular-nums">{Number(item.preco).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</td>
+                  <td className="py-4 px-2 text-right font-black text-slate-900 tabular-nums">
+                      { (item.qtd * item.preco).toLocaleString('pt-MZ', { minimumFractionDigits: 2 }) }
                   </td>
                 </tr>
               ))}
@@ -113,114 +120,109 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
         </div>
 
         {/* RESUMO DE VALORES */}
-        <div className="flex justify-between items-start gap-12">
-          <div className="flex-grow space-y-6">
-            <div className="bg-blue-50/50 border border-blue-100 px-8 py-6 rounded-[2rem]">
-               <p className="text-[10px] font-black text-blue-600 uppercase mb-2 tracking-[0.2em]">Método / Condição</p>
-               <div className="flex items-center gap-3">
-                  <div className="bg-blue-600 text-white p-2 rounded-xl">
-                    <CheckCircle2 size={16} />
-                  </div>
-                  <p className="text-md font-black text-slate-900 uppercase italic tracking-widest">{venda.metodoPagamento || venda.metodo || "Numerário"}</p>
-               </div>
+        <div className="flex justify-end pt-4">
+          <div className="w-full max-w-[280px] space-y-2">
+            <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase px-2">
+              <span>Subtotal</span>
+              <span className="tabular-nums">{Number(venda.subtotal || venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
             </div>
-            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-widest leading-loose pl-2">
-              <p className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-slate-300 rounded-full" /> {configLoja.mensagemRecibo || "Obrigado pela preferência!"}</p>
-              <p className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-slate-300 rounded-full" /> Software certificado pela Autoridade Tributária - VendaJá Pro.</p>
-            </div>
-          </div>
-
-          <div className="w-full max-w-[350px]">
-            <div className="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl shadow-slate-200 print:shadow-none relative overflow-hidden">
-              <div className="relative z-10">
-                <div className="flex justify-between items-center mb-1 opacity-50">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Subtotal</span>
-                  <span className="text-sm font-black tabular-nums">{Number(venda.subtotal || venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
-                </div>
-                {venda.imposto > 0 && (
-                   <div className="flex justify-between items-center mb-1 opacity-50">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">IVA (16%)</span>
-                    <span className="text-sm font-black tabular-nums">{Number(venda.imposto).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                )}
-                <div className="h-px bg-white/10 my-4"></div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-black uppercase tracking-[0.2em] italic">Total Geral</span>
-                  <div className="text-right">
-                    <span className="text-4xl font-black tabular-nums leading-none">{Number(venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
-                    <span className="ml-2 text-xs font-black opacity-50 uppercase">{moeda}</span>
-                  </div>
-                </div>
+            
+            {venda.imposto > 0 && (
+                <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase px-2">
+                <span>IVA (16%)</span>
+                <span className="tabular-nums">{Number(venda.imposto).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
               </div>
-              <div className="absolute -bottom-6 -left-6 w-24 h-24 bg-white/5 rounded-full blur-2xl"></div>
+            )}
+
+            {venda.desconto > 0 && (
+                <div className="flex justify-between text-[10px] font-bold text-rose-500 uppercase px-2">
+                <span>Desconto</span>
+                <span className="tabular-nums">-{Number(venda.desconto).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+
+            <div className="bg-slate-900 text-white p-4 rounded-sm flex justify-between items-center mt-4">
+              <span className="text-[11px] font-black uppercase tracking-widest">Total Geral</span>
+              <div className="text-right leading-none">
+                <span className="text-xl font-black tabular-nums">{Number(venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
+                <span className="ml-1 text-[10px] font-bold opacity-70 uppercase">{moeda}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* RODAPÉ */}
-      <div className="p-12 pt-4 mt-auto">
-        <div className="grid grid-cols-2 gap-20 text-center mb-12">
+      {/* RODAPÉ E CERTIFICAÇÃO */}
+      <div className="p-12 pt-0 mt-auto">
+        <div className="grid grid-cols-2 gap-16 text-center mb-12">
           <div>
-            <div className="h-px bg-slate-200 w-full mb-4"></div>
-            <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">Carimbo e Assinatura Autorizada</p>
+            <div className="h-[1px] bg-slate-300 w-full mb-2"></div>
+            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest">Assinatura e Carimbo (Autorizada)</p>
           </div>
           <div>
-            <div className="h-px bg-slate-200 w-full mb-4"></div>
-            <p className="text-[10px] font-black uppercase text-slate-400 tracking-[0.3em]">Recebi em Conformidade</p>
+            <div className="h-[1px] bg-slate-300 w-full mb-2"></div>
+            <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest">Conformidade do Cliente</p>
           </div>
         </div>
 
-        <div className="flex justify-between items-center pt-8 border-t border-slate-100 opacity-30 grayscale print:opacity-20">
-          <div className="flex items-center gap-3">
-             <FileText size={14} />
-             <p className="text-[8px] font-black uppercase tracking-[0.4em]">Documento Processado por Computador • VendaJá Pro</p>
+        <div className="flex justify-between items-end pt-6 border-t border-slate-100 opacity-40">
+          <div className="space-y-1">
+             <p className="text-[8px] font-black uppercase tracking-[0.3em] text-slate-900">
+               {configLoja.mensagemRecibo || "Obrigado por escolher os nossos serviços!"}
+             </p>
+             <p className="text-[7px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1">
+               <ShieldCheck size={8}/> Software Certificado pela Autoridade Tributária • VendaJá PRO V1.0
+             </p>
           </div>
-          <p className="text-[8px] font-black uppercase tracking-[0.4em]">Página 1 / 1</p>
+          <p className="text-[8px] font-black uppercase tracking-widest text-slate-900">Página 1 / 1</p>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-slate-900/95 backdrop-blur-xl overflow-y-auto pt-10 pb-20 print:p-0 print:bg-white">
-      <div className="fixed top-8 right-12 flex gap-4 print:hidden z-[10000]">
+    <div className="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
+      {/* BARRA DE AÇÕES (ESCONDIDA NA IMPRESSÃO) */}
+      <div className="sticky top-0 w-full bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-center gap-4 print:hidden z-[10001]">
         <button 
-          onClick={imprimir}
-          className="bg-blue-600 text-white px-10 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl hover:bg-blue-700 flex items-center gap-3 transition-all active:scale-95 group"
+          onClick={() => window.print()}
+          className="bg-slate-900 text-white px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all active:scale-95"
         >
-          <Printer size={20} className="group-hover:rotate-12 transition-transform"/> 
-          Imprimir {venda.tipoDocumento || 'Documento'}
+          <Printer size={16}/> Re-imprimir Documento
         </button>
         <button 
           onClick={fechar}
-          className="bg-white/10 text-white p-5 rounded-[2rem] backdrop-blur-md border border-white/20 hover:bg-red-500 hover:border-red-500 transition-all active:scale-95 group"
+          className="bg-rose-50 text-rose-600 border border-rose-100 px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest hover:bg-rose-500 hover:text-white transition-all active:scale-95"
         >
-          <X size={24} className="group-hover:rotate-90 transition-transform" />
+          Sair e Voltar ao Caixa
         </button>
       </div>
 
-      <div className="print:m-0 print:p-0">
+      {/* ÁREA A4 */}
+      <div className="my-10 print:m-0 flex flex-col items-center gap-8">
         <DocumentoPagina tipo="Original" />
-        <div className="print:break-after-page mb-20 print:mb-0"></div>
+        
+        {/* Espaçador entre cópias visível apenas no ecrã */}
+        <div className="w-full max-w-[210mm] border-t-2 border-dashed border-slate-300 my-4 print:hidden relative">
+            <span className="absolute left-1/2 -top-3 -translate-x-1/2 bg-slate-200 text-slate-500 px-4 py-1 rounded-full text-[8px] font-black uppercase">Corte de Duplicado</span>
+        </div>
+
         <DocumentoPagina tipo="Duplicado (Contabilidade)" />
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
         
         @media print {
           body { 
             background: white !important; 
-            margin: 0 !important; 
-            padding: 0 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .fixed, .print\\:hidden { display: none !important; }
+          .fixed, .sticky { display: none !important; }
           @page { 
             size: A4; 
-            margin: 0; 
+            margin: 0mm; 
           }
           .documento-a4 {
             width: 210mm !important;
@@ -228,18 +230,25 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
             margin: 0 !important;
             border: none !important;
             page-break-after: always !important;
+            box-shadow: none !important;
           }
         }
 
         .documento-a4 {
           width: 210mm;
-          min-height: 297mm;
+          height: 297mm;
+          background: white;
           font-family: 'Inter', sans-serif;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+          position: relative;
         }
 
-        @page { margin: 0; }
+        /* Remove as setas de inputs number se houver */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
       `}} />
     </div>
   );
