@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, updateDoc, orderBy, increment, writeBatch } from "firebase/firestore";
 import { 
-  CheckCircle2, AlertCircle, Eye, X, Loader2, Printer, Search, Clock
+  CheckCircle2, AlertCircle, Eye, X, Loader2, Printer, Search, Clock, Wallet
 } from 'lucide-react';
 
 const Fiados = ({ usuario, configLoja, avisar }) => {
@@ -13,6 +13,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
   const [filtroValor, setFiltroValor] = useState('recente'); 
   const [processandoId, setProcessandoId] = useState(null);
   const [vendaSelecionada, setVendaSelecionada] = useState(null);
+  const [valorPagamento, setValorPagamento] = useState(''); // Novo: Estado para valor parcial
 
   const empresaId = usuario?.empresaId || usuario?.uid;
 
@@ -43,8 +44,26 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
     }
   };
 
-  const liquidarDivida = async (venda) => {
-    if (!window.confirm(`CONFIRMAR RECEBIMENTO DE ${Number(venda.saldoDevedor || venda.total).toFixed(2)} ${configLoja?.moeda || 'MT'}?`)) return;
+  const liquidarDivida = async (venda, valorInformado = null) => {
+    const saldoAtual = Number(venda.saldoDevedor ?? venda.total);
+    const valorLiquidar = valorInformado ? Number(valorInformado) : saldoAtual;
+
+    if (valorLiquidar <= 0) {
+        avisar?.("INSIRA UM VALOR VÁLIDO", "erro");
+        return;
+    }
+
+    if (valorLiquidar > saldoAtual) {
+        avisar?.("VALOR SUPERIOR À DÍVIDA", "erro");
+        return;
+    }
+
+    const isTotal = valorLiquidar === saldoAtual;
+    const msg = isTotal 
+        ? `CONFIRMAR LIQUIDAÇÃO TOTAL DE ${valorLiquidar.toFixed(2)} ${configLoja?.moeda || 'MT'}?` 
+        : `CONFIRMAR PAGAMENTO PARCIAL DE ${valorLiquidar.toFixed(2)} ${configLoja?.moeda || 'MT'}?`;
+
+    if (!window.confirm(msg)) return;
     
     setProcessandoId(venda.id);
     const batch = writeBatch(db);
@@ -52,48 +71,63 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
     try {
       const vendaRef = doc(db, "vendas", venda.id);
       
-      // 1. Atualizar o Status da Venda
-      batch.update(vendaRef, {
-        status: "PAGO",
-        valorPago: Number(venda.total),
-        saldoDevedor: 0,
-        dataLiquidacao: new Date().toISOString(),
-        origemPagamento: "Dívida Liquidada",
+      // 1. Atualizar o Status e Valores da Venda
+      const novosDadosVenda = {
+        valorPago: increment(valorLiquidar),
+        saldoDevedor: increment(-valorLiquidar),
+        ultimaAtualizacaoPagamento: new Date().toISOString(),
         liquidadoPor: usuario.nome || "Sistema"
-      });
+      };
 
-      // 2. Lógica de Stock (Abate tardio para Proformas/Orçamentos que viraram venda agora)
-      // Se o documento original NÃO abateu stock, abatemos agora na liquidação
-      const tiposSemAbate = ['Factura Pro-forma', 'Orçamento', 'Pedido Orçamento', 'Proposta'];
-      const tiposRepor = ['Nota de Crédito', 'Devolução', 'Devolução a Dinheiro'];
+      if (isTotal) {
+        novosDadosVenda.status = "PAGO";
+        novosDadosVenda.dataLiquidacao = new Date().toISOString();
+      }
 
-      if (tiposSemAbate.includes(venda.tipoDocumento)) {
-        venda.itens.forEach(item => {
-          const produtoRef = doc(db, "produtos", item.id);
-          batch.update(produtoRef, { stock: increment(-item.qtd) });
-        });
-      } else if (tiposRepor.includes(venda.tipoDocumento)) {
-        // Se for uma devolução que estava pendente, repõe ao liquidar
-        venda.itens.forEach(item => {
-          const produtoRef = doc(db, "produtos", item.id);
-          batch.update(produtoRef, { stock: increment(item.qtd) });
-        });
+      batch.update(vendaRef, novosDadosVenda);
+
+      // 2. Lógica de Stock (Só abate se for a primeira vez que algo é pago ou se o documento exige)
+      // Mantemos a tua lógica original: só abate no momento que sai do "pendente" total para evitar duplicar
+      if (isTotal) {
+          const tiposSemAbate = ['Factura Pro-forma', 'Orçamento', 'Pedido Orçamento', 'Proposta'];
+          const tiposRepor = ['Nota de Crédito', 'Devolução', 'Devolução a Dinheiro'];
+
+          if (tiposSemAbate.includes(venda.tipoDocumento)) {
+            venda.itens.forEach(item => {
+              const produtoRef = doc(db, "produtos", item.id);
+              batch.update(produtoRef, { stock: increment(-item.qtd) });
+            });
+          } else if (tiposRepor.includes(venda.tipoDocumento)) {
+            venda.itens.forEach(item => {
+              const produtoRef = doc(db, "produtos", item.id);
+              batch.update(produtoRef, { stock: increment(item.qtd) });
+            });
+          }
       }
 
       // 3. Atualizar Saldo do Cliente
       if (venda.clienteId) {
         const clienteRef = doc(db, "clientes", venda.clienteId);
         batch.update(clienteRef, {
-          totalPago: increment(Number(venda.saldoDevedor || venda.total)),
-          totalDivida: increment(-Number(venda.saldoDevedor || venda.total))
+          totalPago: increment(valorLiquidar),
+          totalDivida: increment(-valorLiquidar)
         });
       }
 
       await batch.commit();
 
-      setDividas(dividas.filter(d => d.id !== venda.id));
+      if (isTotal) {
+        setDividas(dividas.filter(d => d.id !== venda.id));
+      } else {
+        setDividas(dividas.map(d => d.id === venda.id 
+            ? { ...d, saldoDevedor: (d.saldoDevedor ?? d.total) - valorLiquidar, valorPago: (d.valorPago ?? 0) + valorLiquidar } 
+            : d
+        ));
+      }
+
       setVendaSelecionada(null);
-      avisar?.("PAGAMENTO RECEBIDO E STOCK ATUALIZADO", "sucesso");
+      setValorPagamento('');
+      avisar?.(isTotal ? "DÍVIDA LIQUIDADA" : "PAGAMENTO PARCIAL REGISTADO", "sucesso");
     } catch (error) {
       console.error(error);
       avisar?.("FALHA NA OPERAÇÃO", "erro");
@@ -144,7 +178,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
             </tbody>
           </table>
           <div class="total">
-            TOTAL EM DIVIDA: ${Number(venda.saldoDevedor || venda.total).toFixed(2)} ${configLoja?.moeda || 'MT'}
+            SALDO EM DIVIDA: ${Number(venda.saldoDevedor ?? venda.total).toFixed(2)} ${configLoja?.moeda || 'MT'}
           </div>
         </body>
       </html>
@@ -169,7 +203,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
     }
 
     if (filtroValor === 'maior_valor') {
-      resultado.sort((a, b) => b.total - a.total);
+      resultado.sort((a, b) => (b.saldoDevedor ?? b.total) - (a.saldoDevedor ?? a.total));
     } else {
       resultado.sort((a, b) => new Date(b.data) - new Date(a.data));
     }
@@ -177,7 +211,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
     return resultado;
   }, [dividas, pesquisa, filtroTempo, filtroValor]);
 
-  const totalEmAberto = dadosFiltrados.reduce((acc, d) => acc + Number(d.saldoDevedor || d.total), 0);
+  const totalEmAberto = dadosFiltrados.reduce((acc, d) => acc + Number(d.saldoDevedor ?? d.total), 0);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -273,7 +307,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
                               </span>
                           </td>
                           <td className="p-8 text-right font-black text-slate-900 text-lg tabular-nums italic">
-                              {(item.saldoDevedor || item.total).toFixed(2)}
+                              {(item.saldoDevedor ?? item.total).toFixed(2)}
                           </td>
                           <td className="p-8 text-right flex justify-end gap-2">
                               <button onClick={() => imprimirExtrato(item)} className="p-4 text-slate-400 hover:text-slate-900 border-2 border-slate-50 rounded-2xl hover:bg-white transition-all shadow-sm">
@@ -284,7 +318,7 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
                               </button>
                               <button 
                                   disabled={processandoId === item.id}
-                                  onClick={() => liquidarDivida(item)}
+                                  onClick={() => { setVendaSelecionada(item); }}
                                   className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-900 transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
                               >
                                   {processandoId === item.id ? <Clock className="animate-spin" size={14}/> : 'Liquidar'}
@@ -307,10 +341,10 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
                           <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter italic">{vendaSelecionada.clienteNome || "Consumidor Final"}</h3>
                           <p className="text-slate-400 text-[10px] font-bold">Ref: {vendaSelecionada.id}</p>
                       </div>
-                      <button onClick={() => setVendaSelecionada(null)} className="bg-slate-100 p-3 rounded-2xl text-slate-400 hover:text-rose-500 transition-all"><X size={20}/></button>
+                      <button onClick={() => { setVendaSelecionada(null); setValorPagamento(''); }} className="bg-slate-100 p-3 rounded-2xl text-slate-400 hover:text-rose-500 transition-all"><X size={20}/></button>
                   </div>
                   
-                  <div className="px-10 space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar">
+                  <div className="px-10 space-y-3 max-h-[250px] overflow-y-auto custom-scrollbar">
                       {vendaSelecionada.itens.map((it, idx) => (
                           <div key={idx} className="flex justify-between items-center p-5 bg-slate-50 rounded-[1.5rem] border border-slate-100">
                               <div>
@@ -322,22 +356,45 @@ const Fiados = ({ usuario, configLoja, avisar }) => {
                       ))}
                   </div>
 
-                  <div className="p-10 bg-white">
-                      <div className="flex justify-between items-center mb-8 p-6 bg-slate-900 rounded-[2rem] text-white">
-                          <span className="text-[10px] font-black uppercase text-white/40 italic">Total em Dívida</span>
-                          <span className="text-3xl font-black italic tabular-nums">{(vendaSelecionada.saldoDevedor || vendaSelecionada.total).toFixed(2)} <small className="text-xs text-blue-400">{configLoja?.moeda || 'MT'}</small></span>
+                  <div className="p-10 bg-white space-y-6">
+                      <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white">
+                          <div className="flex justify-between items-center mb-6">
+                              <span className="text-[10px] font-black uppercase text-white/40 italic">Total Atual em Dívida</span>
+                              <span className="text-3xl font-black italic tabular-nums">{(vendaSelecionada.saldoDevedor ?? vendaSelecionada.total).toFixed(2)} <small className="text-xs text-blue-400">{configLoja?.moeda || 'MT'}</small></span>
+                          </div>
+                          
+                          <div className="relative group">
+                              <Wallet className="absolute left-5 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-blue-400 transition-colors" size={20} />
+                              <input 
+                                type="number"
+                                placeholder="VALOR A ENTREGAR..."
+                                className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-5 pl-14 outline-none focus:border-blue-500 font-black text-lg transition-all text-white placeholder:text-white/10"
+                                value={valorPagamento}
+                                onChange={(e) => setValorPagamento(e.target.value)}
+                              />
+                          </div>
                       </div>
+
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <button onClick={() => imprimirExtrato(vendaSelecionada)} className="flex items-center justify-center gap-3 border-2 border-slate-100 py-5 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-50 transition-all text-slate-600">
-                            <Printer size={18}/> Imprimir Extrato
+                        <button 
+                            disabled={processandoId}
+                            onClick={() => liquidarDivida(vendaSelecionada, valorPagamento)} 
+                            className="flex items-center justify-center gap-3 bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-800 transition-all shadow-xl shadow-blue-200 disabled:opacity-50"
+                        >
+                            {processandoId ? <Clock className="animate-spin" size={18}/> : <CheckCircle2 size={18}/>}
+                            Registar Pagamento
                         </button>
                         <button 
-                          onClick={() => liquidarDivida(vendaSelecionada)} 
-                          className="flex items-center justify-center gap-3 bg-blue-600 text-white py-5 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-900 transition-all shadow-xl shadow-blue-200"
+                            onClick={() => liquidarDivida(vendaSelecionada)} 
+                            className="flex items-center justify-center gap-3 border-2 border-slate-900 py-5 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-900 hover:text-white transition-all text-slate-900"
                         >
-                            <CheckCircle2 size={18}/> Confirmar Recebimento
+                            Liquidar Tudo
                         </button>
                       </div>
+                      
+                      <button onClick={() => imprimirExtrato(vendaSelecionada)} className="w-full flex items-center justify-center gap-3 border-2 border-dashed border-slate-200 py-4 rounded-2xl font-black uppercase text-[9px] hover:bg-slate-50 transition-all text-slate-400">
+                          <Printer size={16}/> Gerar Novo Extrato de Débito
+                      </button>
                   </div>
               </div>
           </div>
