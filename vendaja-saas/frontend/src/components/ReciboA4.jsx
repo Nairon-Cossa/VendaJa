@@ -1,24 +1,23 @@
 import React, { useEffect } from 'react';
 import { 
-  Printer, X, User, Building2, ShieldCheck, 
-  Globe, Phone, FileText, CheckCircle2 
+  Printer, Building2, ShieldCheck, 
+  Globe, Phone 
 } from 'lucide-react';
 
 const ReciboA4 = ({ venda, configLoja, fechar }) => {
   const moeda = configLoja.moeda || 'MT';
 
-  // Resolve o problema do ecrã vazio ao abrir a impressão
   useEffect(() => {
     const timer = setTimeout(() => {
       window.print();
-    }, 800); // Tempo seguro para renderização completa e carregamento de fontes/imagens
+    }, 1000); // Aumentado ligeiramente para garantir renderização de fontes
     return () => clearTimeout(timer);
   }, []);
 
   if (!venda) return null;
 
   const DocumentoPagina = ({ tipo }) => (
-    <div className="documento-a4 flex flex-col bg-white border-b border-slate-200 last:border-0 print:border-0 mx-auto overflow-hidden">
+    <div className="documento-a4 flex flex-col bg-white border-b border-slate-200 last:border-0 print:border-0 mx-auto overflow-hidden shadow-2xl print:shadow-none">
       
       {/* HEADER CORPORATIVO */}
       <div className="p-12 pb-8 flex justify-between items-start border-b-2 border-slate-900">
@@ -93,7 +92,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
           </div>
         </div>
 
-        {/* TABELA DE ITENS - CLEAN */}
+        {/* TABELA DE ITENS */}
         <div className="mb-10">
           <table className="w-full">
             <thead>
@@ -119,28 +118,19 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
           </table>
         </div>
 
-        {/* RESUMO DE VALORES */}
+        {/* RESUMO */}
         <div className="flex justify-end pt-4">
           <div className="w-full max-w-[280px] space-y-2">
             <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase px-2">
               <span>Subtotal</span>
               <span className="tabular-nums">{Number(venda.subtotal || venda.total).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
             </div>
-            
             {venda.imposto > 0 && (
                 <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase px-2">
                 <span>IVA (16%)</span>
                 <span className="tabular-nums">{Number(venda.imposto).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
               </div>
             )}
-
-            {venda.desconto > 0 && (
-                <div className="flex justify-between text-[10px] font-bold text-rose-500 uppercase px-2">
-                <span>Desconto</span>
-                <span className="tabular-nums">-{Number(venda.desconto).toLocaleString('pt-MZ', { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-
             <div className="bg-slate-900 text-white p-4 rounded-sm flex justify-between items-center mt-4">
               <span className="text-[11px] font-black uppercase tracking-widest">Total Geral</span>
               <div className="text-right leading-none">
@@ -152,7 +142,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
         </div>
       </div>
 
-      {/* RODAPÉ E CERTIFICAÇÃO */}
+      {/* RODAPÉ */}
       <div className="p-12 pt-0 mt-auto">
         <div className="grid grid-cols-2 gap-16 text-center mb-12">
           <div>
@@ -171,7 +161,7 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
                {configLoja.mensagemRecibo || "Obrigado por escolher os nossos serviços!"}
              </p>
              <p className="text-[7px] font-bold uppercase tracking-widest text-slate-500 flex items-center gap-1">
-               <ShieldCheck size={8}/> Software Certificado pela Autoridade Tributária • VendaJá PRO V1.0
+               <ShieldCheck size={8}/> Software Certificado • VendaJá PRO V1.0
              </p>
           </div>
           <p className="text-[8px] font-black uppercase tracking-widest text-slate-900">Página 1 / 1</p>
@@ -181,30 +171,30 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
   );
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:overflow-visible">
-      {/* BARRA DE AÇÕES (ESCONDIDA NA IMPRESSÃO) */}
+    <div className="fixed inset-0 z-[9999] bg-slate-900/40 backdrop-blur-sm overflow-y-auto print:bg-white print:static print:overflow-visible">
+      
+      {/* BOTÕES DE AÇÃO - ESCONDIDOS NA IMPRESSÃO */}
       <div className="sticky top-0 w-full bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 flex justify-center gap-4 print:hidden z-[10001]">
         <button 
           onClick={() => window.print()}
-          className="bg-slate-900 text-white px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all active:scale-95"
+          className="bg-slate-900 text-white px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:bg-slate-800 transition-all"
         >
-          <Printer size={16}/> Re-imprimir Documento
+          <Printer size={16}/> Re-imprimir
         </button>
         <button 
           onClick={fechar}
-          className="bg-rose-50 text-rose-600 border border-rose-100 px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest hover:bg-rose-500 hover:text-white transition-all active:scale-95"
+          className="bg-white text-slate-900 border border-slate-200 px-8 py-3 rounded-full font-black uppercase text-[10px] tracking-widest hover:bg-slate-50 transition-all"
         >
-          Sair e Voltar ao Caixa
+          Sair
         </button>
       </div>
 
-      {/* ÁREA A4 */}
-      <div className="my-10 print:m-0 flex flex-col items-center gap-8">
+      {/* ÁREA DE IMPRESSÃO - Esta classe "print-container" é a chave */}
+      <div className="print-container my-10 print:m-0 flex flex-col items-center gap-8">
         <DocumentoPagina tipo="Original" />
         
-        {/* Espaçador entre cópias visível apenas no ecrã */}
         <div className="w-full max-w-[210mm] border-t-2 border-dashed border-slate-300 my-4 print:hidden relative">
-            <span className="absolute left-1/2 -top-3 -translate-x-1/2 bg-slate-200 text-slate-500 px-4 py-1 rounded-full text-[8px] font-black uppercase">Corte de Duplicado</span>
+            <span className="absolute left-1/2 -top-3 -translate-x-1/2 bg-slate-200 text-slate-500 px-4 py-1 rounded-full text-[8px] font-black uppercase text-center">Corte de Duplicado</span>
         </div>
 
         <DocumentoPagina tipo="Duplicado (Contabilidade)" />
@@ -214,40 +204,44 @@ const ReciboA4 = ({ venda, configLoja, fechar }) => {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
         
         @media print {
-          body { 
-            background: white !important; 
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
+          /* ESCONDE TUDO NO BODY */
+          body * {
+            visibility: hidden;
           }
-          .fixed, .sticky { display: none !important; }
+          
+          /* MOSTRA APENAS O CONTAINER DO RECIBO */
+          .print-container, .print-container * {
+            visibility: visible;
+          }
+          
+          /* POSICIONA O RECIBO NO TOPO DA PÁGINA DE IMPRESSÃO */
+          .print-container {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 210mm;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+
+          .documento-a4 {
+            width: 210mm !important;
+            height: 296mm !important; /* Ligeiramente menor que 297 para evitar páginas em branco extras */
+            page-break-after: always !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+
           @page { 
             size: A4; 
             margin: 0mm; 
-          }
-          .documento-a4 {
-            width: 210mm !important;
-            height: 297mm !important;
-            margin: 0 !important;
-            border: none !important;
-            page-break-after: always !important;
-            box-shadow: none !important;
           }
         }
 
         .documento-a4 {
           width: 210mm;
           height: 297mm;
-          background: white;
           font-family: 'Inter', sans-serif;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-          position: relative;
-        }
-
-        /* Remove as setas de inputs number se houver */
-        input::-webkit-outer-spin-button,
-        input::-webkit-inner-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
         }
       `}} />
     </div>
