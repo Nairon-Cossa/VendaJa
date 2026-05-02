@@ -3,16 +3,16 @@ import { db } from '../firebase';
 import { collection, doc, increment, serverTimestamp, writeBatch } from "firebase/firestore";
 import { 
   Search, Trash2, CheckCircle2, Plus, Minus, Clock, 
-  User, ShoppingBag, FileText, ArrowLeftRight
+  User, ShoppingBag, FileText, ArrowLeftRight, Wallet
 } from 'lucide-react';
 import ReciboA4 from '../components/ReciboA4';
 
 const REGRAS_SETOR = {
-  'Mercearia': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR" },
+  'Mercearia': { labelExtra: "Cliente", placeholder: "Nome do Cliente/Empresa", botaoAcao: "CONCLUIR" },
   'Restaurante/Bar': { labelExtra: "Mesa/Comando", placeholder: "Ex: Mesa 05", botaoAcao: "PAGAR" },
   'Oficina': { labelExtra: "Viatura", placeholder: "Matrícula ou Modelo", botaoAcao: "PAGAR" },
   'Farmácia': { labelExtra: "Paciente", placeholder: "Nome do Paciente", botaoAcao: "CONCLUIR" },
-  'Geral': { labelExtra: "Cliente", placeholder: "Nome do Cliente", botaoAcao: "CONCLUIR" }
+  'Geral': { labelExtra: "Cliente", placeholder: "Nome do Cliente/Empresa", botaoAcao: "CONCLUIR" }
 };
 
 const TIPOS_DOCUMENTOS = [
@@ -47,8 +47,9 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const [metodo, setMetodo] = useState('Dinheiro');
   const [tipoDoc, setTipoDoc] = useState('Venda a Dinheiro');
   const [referencia, setReferencia] = useState('');
-  const [refDocOrigem, setRefDocOrigem] = useState(''); // Para Notas de Crédito/Devolução
+  const [refDocOrigem, setRefDocOrigem] = useState(''); 
   const [desconto, setDesconto] = useState('');
+  const [valorPago, setValorPago] = useState(''); // NOVO: Controlar pagamentos parciais
   const [aplicarIva, setAplicarIva] = useState(false);
   const [nomeCliente, setNomeCliente] = useState('');
   const [nuitCliente, setNuitCliente] = useState('');
@@ -61,11 +62,17 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
   const moeda = configLoja?.moeda || 'MT';
   const empresaId = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
 
+  // Cálculos Financeiros
   const subtotal = carrinho.reduce((acc, item) => acc + (Number(item.preco || 0) * item.qtd), 0);
   const valorDesconto = Number(desconto) || 0;
   const baseTributavel = Math.max(0, subtotal - valorDesconto);
   const valorIva = aplicarIva ? (baseTributavel * 0.16) : 0;
   const totalFinal = baseTributavel + valorIva;
+
+  // Lógica de Pagamento Parcial
+  const numValorPago = valorPago === '' ? (metodo === 'Dívida (Fiado)' ? 0 : totalFinal) : Number(valorPago);
+  const troco = Math.max(0, numValorPago - totalFinal);
+  const saldoDevedor = Math.max(0, totalFinal - numValorPago);
 
   const produtosDaLoja = produtos.filter(p => {
     const pertenceALoja = p.lojaId === empresaId || p.empresaId === empresaId;
@@ -106,14 +113,13 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     
     const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
 
-    // Validação de Nota de Crédito/Devolução
     if (docConfig.abateStock === 'repor' && !refDocOrigem) {
         avisar?.("INDIQUE O DOCUMENTO DE ORIGEM", "erro");
         return;
     }
 
-    if (metodo === 'Dívida (Fiado)' && !nomeCliente) {
-        avisar?.("CLIENTE OBRIGATÓRIO PARA FIADO", "erro");
+    if ((metodo === 'Dívida (Fiado)' || saldoDevedor > 0) && !nomeCliente) {
+        avisar?.("NOME DO CLIENTE OBRIGATÓRIO PARA FIADO/DÍVIDA", "erro");
         return;
     }
 
@@ -124,7 +130,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
       const agora = new Date();
       const vendaRef = doc(collection(db, "vendas"));
       
-      // Formatação precisa de tempo: Hora, Minuto, Segundo
       const horaHms = agora.getHours().toString().padStart(2, '0') + ":" + 
                       agora.getMinutes().toString().padStart(2, '0') + ":" + 
                       agora.getSeconds().toString().padStart(2, '0');
@@ -137,9 +142,13 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         lojaNome: configLoja?.nomeLoja || "Minha Loja",
         tipoDocumento: tipoDoc,
         documentoOrigem: (docConfig.abateStock === 'repor') ? refDocOrigem.toUpperCase() : null,
-        infoAdicional: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
+        
+        // Dados do Cliente
+        clienteNome: nomeCliente.toUpperCase() || "CONSUMIDOR FINAL",
         clienteNuit: nuitCliente,
         clienteEndereco: enderecoCliente,
+        
+        // Itens e Valores
         itens: carrinho.map(item => ({
           id: item.id,
           nome: item.nome,
@@ -151,22 +160,53 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
         desconto: valorDesconto,
         imposto: valorIva,
         total: totalFinal,
+        
+        // Lógica de Pagamento
         metodo,
-        status: metodo === 'Dívida (Fiado)' ? 'PENDENTE' : 'PAGO',
+        valorPago: numValorPago,
+        troco: troco,
+        saldoDevedor: saldoDevedor,
+        status: saldoDevedor > 0 ? 'PENDENTE' : 'PAGO',
+        
         referencia: referencia.toUpperCase(),
         data: agora.toISOString().split('T')[0], 
-        hora: horaHms, // Salva HH:mm:ss
+        hora: horaHms,
         timestamp: serverTimestamp()
       };
 
+      // 1. GRAVAR A VENDA
       batch.set(vendaRef, dadosVenda);
 
+      // 2. ATUALIZAR STOCK
       if (docConfig.abateStock !== false) {
         carrinho.forEach(item => {
           const produtoRef = doc(db, "produtos", item.id);
           const fator = docConfig.abateStock === 'repor' ? item.qtd : -item.qtd;
           batch.update(produtoRef, { stock: increment(fator) });
         });
+      }
+
+      // 3. REGISTAR/ATUALIZAR CLIENTE PARA ESTATÍSTICAS E DÍVIDAS
+      if (nomeCliente) {
+        // Usa NUIT ou Nome formatado como ID para agrupar as compras da mesma pessoa/empresa
+        const idBase = nuitCliente || nomeCliente.trim().replace(/\s+/g, '_').toLowerCase();
+        const clienteRef = doc(db, "clientes", `${empresaId}_${idBase}`);
+        
+        batch.set(clienteRef, {
+          id: `${empresaId}_${idBase}`,
+          empresaId,
+          nome: nomeCliente.toUpperCase(),
+          nuit: nuitCliente,
+          endereco: enderecoCliente,
+          totalGasto: increment(totalFinal), // Tudo que comprou
+          totalPago: increment(numValorPago), // Tudo que já pagou
+          totalDivida: increment(saldoDevedor), // Tudo que falta pagar
+          frequenciaCompras: increment(1), // Quantas vezes já comprou
+          ultimaCompra: agora.toISOString(),
+          atualizadoEm: serverTimestamp()
+        }, { merge: true });
+
+        dadosVenda.clienteId = clienteRef.id;
       }
 
       await batch.commit();
@@ -185,6 +225,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
     <>
       <div className="flex flex-col lg:flex-row gap-4 h-[calc(100vh-100px)] overflow-hidden">
         
+        {/* Lado Esquerdo - Produtos */}
         <div className="flex-1 bg-slate-50 rounded-[2rem] flex flex-col overflow-hidden border border-slate-200">
           <div className="p-4 bg-white border-b shadow-sm flex gap-2">
             <div className="relative flex-1">
@@ -235,6 +276,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
           </div>
         </div>
 
+        {/* Lado Direito - Checkout */}
         <div className="w-full lg:w-[420px] bg-white rounded-[2rem] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
           <div className="p-5 bg-slate-50 border-b">
             <div className="flex items-center gap-2 mb-3">
@@ -249,7 +291,6 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                 onChange={e => setNomeCliente(e.target.value)} 
               />
               
-              {/* CAMPO OBRIGATÓRIO PARA NOTA DE CRÉDITO / DEVOLUÇÃO */}
               {(TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc).abateStock === 'repor') && (
                 <div className="flex items-center gap-2 bg-rose-50 border-2 border-rose-100 p-2 rounded-xl animate-in fade-in zoom-in duration-300">
                   <ArrowLeftRight size={14} className="text-rose-500" />
@@ -300,7 +341,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
               {Object.keys(CORES_METODOS).map(m => (
                 <button
                   key={m}
-                  onClick={() => setMetodo(m)}
+                  onClick={() => { setMetodo(m); if(m === 'Dívida (Fiado)') setValorPago(''); }}
                   className={`flex flex-col items-center justify-center py-2 rounded-xl border-2 transition-all ${metodo === m ? `${CORES_METODOS[m]} text-white border-transparent` : 'border-white/10 text-white/30 hover:border-white/30'}`}
                 >
                   <span className="text-[6px] font-black uppercase">{m.substring(0, 6)}</span>
@@ -310,10 +351,40 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
 
             <div className="grid grid-cols-2 gap-2 mb-4">
                <button onClick={() => setAplicarIva(!aplicarIva)} className={`p-2 rounded-xl border text-[10px] font-black ${aplicarIva ? 'bg-blue-600 border-blue-600' : 'bg-white/5 border-white/10 text-white/40'}`}>+ IVA (16%)</button>
-               <input type="number" placeholder="Desconto" className="bg-white/5 border border-white/10 p-2 rounded-xl text-white font-bold text-[10px] outline-none" value={desconto} onChange={e => setDesconto(e.target.value)} />
+               <input type="number" placeholder="Desconto (MT)" className="bg-white/5 border border-white/10 p-2 rounded-xl text-white font-bold text-[10px] outline-none" value={desconto} onChange={e => setDesconto(e.target.value)} />
             </div>
 
-            <div className="flex justify-between items-end mb-4 border-t border-white/10 pt-4">
+            {/* SECÇÃO DE PAGAMENTO PARCIAL E TROCO */}
+            <div className="bg-white/5 rounded-xl p-3 mb-4 space-y-2 border border-white/10">
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-white/50">VALOR PAGO ({moeda})</span>
+                    <div className="flex items-center gap-2">
+                        <Wallet size={12} className="text-blue-400" />
+                        <input 
+                            type="number" 
+                            placeholder="TOTAL" 
+                            className="bg-transparent text-right text-white font-black text-sm outline-none w-24 placeholder:text-white/20" 
+                            value={valorPago} 
+                            onChange={e => setValorPago(e.target.value)} 
+                        />
+                    </div>
+                </div>
+                
+                {saldoDevedor > 0 && (
+                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                        <span className="text-[9px] font-black text-rose-400 uppercase">Falta Pagar (Dívida)</span>
+                        <span className="text-[10px] font-black text-rose-400">{saldoDevedor.toFixed(2)}</span>
+                    </div>
+                )}
+                {troco > 0 && (
+                    <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                        <span className="text-[9px] font-black text-emerald-400 uppercase">Troco ao Cliente</span>
+                        <span className="text-[10px] font-black text-emerald-400">{troco.toFixed(2)}</span>
+                    </div>
+                )}
+            </div>
+
+            <div className="flex justify-between items-end mb-4 pt-2">
               <div className="text-white/30 uppercase font-black text-[9px]">Total {tipoDoc}</div>
               <div className="text-3xl font-black italic tracking-tighter tabular-nums">{totalFinal.toFixed(2)} <small className="text-xs not-italic">{moeda}</small></div>
             </div>
@@ -324,7 +395,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
                 className={`w-full py-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-widest ${carrinho.length === 0 || carregando ? 'bg-white/5 text-white/10' : 'bg-blue-600 hover:bg-blue-500 shadow-xl'}`}
             >
               {carregando ? <Clock className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
-              {metodo === 'Dívida (Fiado)' ? 'REGISTAR DÍVIDA' : `EMITIR ${tipoDoc}`}
+              {saldoDevedor > 0 ? 'REGISTAR COM DÍVIDA' : `EMITIR ${tipoDoc}`}
             </button>
           </div>
         </div>
@@ -341,6 +412,7 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
             setDesconto('');
             setReferencia('');
             setRefDocOrigem('');
+            setValorPago('');
           }} 
         />
       )}

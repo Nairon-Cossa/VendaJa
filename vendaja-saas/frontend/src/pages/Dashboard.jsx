@@ -12,19 +12,17 @@ import {
   TrendingUp,
   Package,
   DollarSign,
-  ArrowUpRight,
   ShoppingBag,
   Clock,
-  Activity,
-  ListOrdered,
   ChevronRight,
   RefreshCw,
-  CheckCircle2,
   Globe,
   Zap,
   Crown,
-  AlertCircle,
-  BarChart3
+  BarChart3,
+  Users,
+  Award,
+  Star
 } from 'lucide-react';
 
 const Dashboard = ({ produtos = [], usuario, avisar }) => {
@@ -36,17 +34,26 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
   const isPremium = usuario?.plano === 'premium';
 
   useEffect(() => {
-    const handleStatus = () => setIsOnline(navigator.onLine);
-    window.addEventListener('online', handleStatus);
-    window.addEventListener('offline', handleStatus);
-    return () => {
-      window.removeEventListener('online', handleStatus);
-      window.removeEventListener('offline', handleStatus);
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (avisar) avisar('Conexão restabelecida. Sistema Online.', 'success');
     };
-  }, []);
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      if (avisar) avisar('Sem conexão à internet. Modo offline ativado.', 'warning');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [avisar]);
 
   useEffect(() => {
-    // Sincronizado com a lógica do App.js: Prioriza empresaId ou lojaId
     const idBusca = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
     
     if (!idBusca) {
@@ -54,7 +61,6 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
         return;
     }
 
-    // Tenta buscar por empresaId (novo padrão) ou lojaId (padrão antigo/funcionário)
     const q = query(
       collection(db, 'vendas'),
       where('empresaId', '==', idBusca),
@@ -73,24 +79,23 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       },
       (error) => {
         console.error('Erro Firestore Dashboard:', error);
-        // Fallback: Se falhar por falta de índice ou campo empresaId, tenta por lojaId
         if (error.code === 'failed-precondition') {
-            console.warn("Tentando query alternativa por lojaId...");
+          if (avisar) avisar('A criar novos índices de performance. Aguarde...', 'info');
+        } else {
+          if (avisar) avisar('Erro ao sincronizar os dados das vendas.', 'error');
         }
         setCarregando(false);
       }
     );
 
     return () => unsubscribe();
-  }, [usuario?.uid, usuario?.lojaId, usuario?.empresaId]);
+  }, [usuario?.uid, usuario?.lojaId, usuario?.empresaId, avisar]);
 
   /* ===============================
       LÓGICA DE PERFORMANCE AVANÇADA
   =============================== */
   const estatisticas = useMemo(() => {
     const hojeStr = new Date().toLocaleDateString();
-    const idLoja = usuario?.empresaId || usuario?.lojaId || usuario?.uid;
-
     const totalHistorico = vendas.reduce((acc, v) => acc + Number(v.total || 0), 0);
 
     const vendasHoje = vendas.filter(v => {
@@ -103,25 +108,49 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 
     const totalHoje = vendasHoje.reduce((acc, v) => acc + Number(v.total || 0), 0);
 
-    // CÁLCULO DE LUCRO REAL (Venda - Custo)
+    // ANALISE DE PRODUTOS E CLIENTES
     let lucroTotal = 0;
+    const rankingProdutos = {};
+    const rankingClientes = {};
     
     vendas.forEach(v => {
+      // Cálculo de Clientes
+      if (v.clienteNome || v.infoAdicional) {
+        const cNome = v.clienteNome || v.infoAdicional;
+        if (!rankingClientes[cNome]) rankingClientes[cNome] = { total: 0, compras: 0 };
+        rankingClientes[cNome].total += Number(v.total || 0);
+        rankingClientes[cNome].compras += 1;
+      }
+
+      // Cálculo de Produtos e Lucro
       v.itens?.forEach(item => {
         const prod = produtos.find(p => p.id === item.id);
-        // Usa custo do produto ou custo salvo na venda (se existir)
         const custoUnitario = Number(item.custoCompra || prod?.custo || 0);
         const precoVendaUnitario = Number(item.preco || 0);
         const qtd = Number(item.quantidade || item.qtd || 0);
         
         lucroTotal += (precoVendaUnitario - custoUnitario) * qtd;
+
+        // Top Vendidos
+        const pNome = item.nome || prod?.nome || 'Produto s/ Nome';
+        if (!rankingProdutos[pNome]) rankingProdutos[pNome] = { qtd: 0, valor: 0 };
+        rankingProdutos[pNome].qtd += qtd;
+        rankingProdutos[pNome].valor += (precoVendaUnitario * qtd);
       });
     });
 
-    // Filtra produtos críticos para a loja atual
+    const topProdutos = Object.entries(rankingProdutos)
+      .map(([nome, data]) => ({ nome, ...data }))
+      .sort((a, b) => b.qtd - a.qtd)
+      .slice(0, 5);
+
+    const topClientes = Object.entries(rankingClientes)
+      .map(([nome, data]) => ({ nome, ...data }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+
     const produtosCriticos = produtos.filter(p => Number(p.stock ?? 0) <= 5);
 
-    // KPI de Saúde
     let saude = 100;
     if (produtosCriticos.length > 0) saude -= (produtosCriticos.length * 2);
     if (vendas.length > 0 && totalHoje === 0) saude -= 10;
@@ -135,16 +164,18 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       numCriticos: produtosCriticos.length,
       vendasHojeQtd: vendasHoje.length,
       saude: Math.max(saude, 5),
-      margemMedia: totalHistorico > 0 ? (lucroTotal / totalHistorico) * 100 : 0
+      margemMedia: totalHistorico > 0 ? (lucroTotal / totalHistorico) * 100 : 0,
+      topProdutos,
+      topClientes
     };
-  }, [vendas, produtos, isOnline, usuario]);
+  }, [vendas, produtos, isOnline]);
 
   if (carregando) {
     return (
       <div className="h-96 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <RefreshCw className="text-blue-600 animate-spin" size={32} />
-          <p className="text-slate-400 font-black text-[9px] uppercase tracking-[0.4em]">Sincronizando Performance...</p>
+          <p className="text-slate-400 font-black text-[9px] uppercase tracking-[0.4em]">Analizando Métrica...</p>
         </div>
       </div>
     );
@@ -153,7 +184,7 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
   return (
     <div className="animate-in fade-in duration-700 space-y-8 pb-10">
       
-      {/* HEADER SECTION */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -206,50 +237,42 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* TABELA DE VENDAS RECENTES */}
-        <div className="lg:col-span-2 bg-white rounded-[3rem] border shadow-sm overflow-hidden group">
+        {/* VENDAS RECENTES */}
+        <div className="lg:col-span-2 bg-white rounded-[3rem] border shadow-sm overflow-hidden">
           <div className="p-8 border-b flex justify-between items-center text-slate-900">
             <div className="flex gap-3 items-center">
                 <Clock className="text-blue-600" size={18} />
                 <h4 className="font-black uppercase text-xs tracking-widest">Registos Recentes</h4>
             </div>
-            <button onClick={() => navigate('/historico')} className="text-[10px] font-black text-slate-400 hover:text-blue-600 transition-colors uppercase tracking-widest">Ver Tudo</button>
+            <button onClick={() => navigate('/historico')} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-widest">Ver Tudo</button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full text-left">
               <tbody>
                 {vendas.length === 0 ? (
-                    <tr>
-                        <td className="p-10 text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest">Nenhuma venda registada nesta unidade.</td>
-                    </tr>
+                    <tr><td className="p-10 text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest">Sem registos.</td></tr>
                 ) : (
-                    vendas.slice(0, 6).map(v => (
+                    vendas.slice(0, 5).map(v => (
                         <tr key={v.id} onClick={() => navigate('/historico')} className="cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
                           <td className="p-6">
-                              <p className="font-black uppercase text-[11px] text-slate-800">{v.infoAdicional || 'Venda Rápida'}</p>
+                              <p className="font-black uppercase text-[11px] text-slate-800">{v.clienteNome || v.infoAdicional || 'Venda Rápida'}</p>
                               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">
-                                {v.metodo === 'Dívida (Fiado)' ? '🔴 DÍVIDA PENDENTE' : `Vendedor: ${v.vendedorNome || 'Admin'}`}
+                                {v.metodo === 'Dívida (Fiado)' ? '🔴 DÍVIDA PENDENTE' : `Ref: ${v.id.slice(0,8)}`}
                               </p>
-                          </td>
-                          <td className="p-6 text-center">
-                              <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-lg ${v.metodo === 'Dívida (Fiado)' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-                                {v.metodo}
-                              </span>
                           </td>
                           <td className="p-6 text-right">
                             <p className="font-black text-slate-900 italic">{Number(v.total).toFixed(2)} MT</p>
                           </td>
                         </tr>
-                      ))
+                    ))
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* COLUNA LATERAL - INSIGHTS */}
+        {/* SAÚDE E UPGRADE */}
         <div className="flex flex-col gap-6">
-          {/* SAÚDE DO NEGÓCIO */}
           <div className={`p-8 rounded-[3rem] text-white relative overflow-hidden transition-all ${estatisticas.saude > 70 ? 'bg-emerald-500' : 'bg-orange-500'}`}>
               <BarChart3 size={80} className="absolute -right-4 -bottom-4 opacity-20" />
               <p className="uppercase text-[10px] font-black tracking-widest opacity-80 mb-1">Saúde do Negócio</p>
@@ -259,43 +282,58 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
               </div>
           </div>
 
-          {/* LOJA ONLINE OU UPGRADE */}
-          {isPremium ? (
-            <div className="bg-slate-900 rounded-[3rem] p-8 text-white relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
-                <Globe size={120} />
-              </div>
-              <div className="relative z-10">
-                <div className="bg-blue-600 w-12 h-12 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-                  <Globe size={24} />
-                </div>
-                <h4 className="text-xl font-black uppercase italic leading-tight">Canal Digital<br/>Activo</h4>
-                
-                <div className="mt-8 space-y-4">
-                  <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
-                    <p className="text-[9px] font-black uppercase opacity-50">Link da Montra</p>
-                    <p className="text-xs font-bold truncate tracking-tight text-blue-100">loja.venda-japro.com/{usuario?.nomeLoja?.toLowerCase().replace(/\s+/g, '')}</p>
-                  </div>
-                  <button onClick={() => navigate('/definicoes')} className="w-full bg-blue-600 p-4 rounded-2xl text-[10px] font-black uppercase hover:bg-blue-700 transition-all">Gerir Loja Online</button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-[3rem] p-8 flex flex-col justify-center items-center text-center group">
-              <div className="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center shadow-xl mb-6 group-hover:rotate-12 transition-transform">
-                <Zap size={32} className="text-blue-600" />
-              </div>
-              <h4 className="text-blue-900 font-black uppercase italic leading-tight">Desbloquear<br/>Premium</h4>
-              <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest mt-4 leading-relaxed">Gestão de Fiados e Relatórios de Lucro detalhados.</p>
-              <button 
-                onClick={() => window.open(`https://wa.me/258878296706?text=Ativar+Premium+Loja:+${usuario?.nomeLoja}`, '_blank')}
-                className="mt-8 w-full bg-blue-600 text-white py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200"
-              >
-                Ativar Agora
-              </button>
+          {!isPremium && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-[3rem] p-8 flex flex-col items-center text-center">
+              <Zap size={32} className="text-blue-600 mb-4" />
+              <h4 className="text-blue-900 font-black uppercase italic leading-tight text-lg">Impulso Premium</h4>
+              <button onClick={() => window.open(`https://wa.me/258878296706?text=Ativar+Premium`, '_blank')} className="mt-6 w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest">Ativar Agora</button>
             </div>
           )}
         </div>
+      </div>
+
+      {/* NOVAS SECCÕES: RANKINGS DE PRODUTOS E CLIENTES */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* TOP PRODUTOS */}
+        <div className="bg-slate-900 text-white rounded-[3rem] p-8 relative overflow-hidden">
+          <Award className="absolute right-6 top-6 text-blue-500 opacity-20" size={100} />
+          <div className="flex items-center gap-3 mb-8">
+            <div className="bg-blue-600 p-2 rounded-xl"><Star size={16} /></div>
+            <h4 className="font-black uppercase text-xs tracking-[0.2em]">Top Vendidos (Potencial)</h4>
+          </div>
+          <div className="space-y-6">
+            {estatisticas.topProdutos.length > 0 ? estatisticas.topProdutos.map((p, idx) => (
+              <div key={idx} className="flex justify-between items-center border-b border-slate-800 pb-4 last:border-0">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-tight">{p.nome}</p>
+                  <p className="text-[9px] text-slate-500 font-bold uppercase">{p.qtd} unidades movidas</p>
+                </div>
+                <p className="text-blue-400 font-black italic">{p.valor.toLocaleString()} MT</p>
+              </div>
+            )) : <p className="text-[10px] text-slate-500 uppercase font-black">Sem dados de movimentação.</p>}
+          </div>
+        </div>
+
+        {/* TOP CLIENTES */}
+        <div className="bg-white border rounded-[3rem] p-8 shadow-sm">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="bg-slate-100 p-2 rounded-xl text-slate-900"><Users size={16} /></div>
+            <h4 className="font-black uppercase text-xs tracking-[0.2em] text-slate-900">Clientes Frequentes</h4>
+          </div>
+          <div className="space-y-6">
+            {estatisticas.topClientes.length > 0 ? estatisticas.topClientes.map((c, idx) => (
+              <div key={idx} className="flex justify-between items-center border-b border-slate-50 pb-4 last:border-0">
+                <div>
+                  <p className="text-[11px] font-black uppercase text-slate-800">{c.nome}</p>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase">{c.compras} compras realizadas</p>
+                </div>
+                <p className="text-slate-900 font-black italic">{c.total.toLocaleString()} MT</p>
+              </div>
+            )) : <p className="text-[10px] text-slate-400 uppercase font-black">Nenhum cliente recorrente.</p>}
+          </div>
+        </div>
+
       </div>
 
       <button
@@ -309,21 +347,9 @@ const Dashboard = ({ produtos = [], usuario, avisar }) => {
 };
 
 const Card = ({ icon, title, children, dark, danger }) => (
-  <div
-    className={`p-8 rounded-[2.5rem] border shadow-sm transition-all hover:shadow-xl ${
-      dark
-        ? 'bg-slate-900 text-white border-slate-800 shadow-slate-200'
-        : danger
-        ? 'bg-red-50 border-red-200 shadow-red-100'
-        : 'bg-white border-slate-100'
-    }`}
-  >
-    <div className={`mb-4 w-10 h-10 rounded-xl flex items-center justify-center ${dark ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-900'}`}>
-      {React.cloneElement(icon, { size: 20 })}
-    </div>
-    <p className={`text-[10px] font-black uppercase tracking-widest ${dark ? 'opacity-60' : 'text-slate-400'}`}>
-      {title}
-    </p>
+  <div className={`p-8 rounded-[2.5rem] border shadow-sm transition-all hover:shadow-xl ${dark ? 'bg-slate-900 text-white border-slate-800 shadow-slate-200' : danger ? 'bg-red-50 border-red-200 shadow-red-100' : 'bg-white border-slate-100'}`}>
+    <div className={`mb-4 w-10 h-10 rounded-xl flex items-center justify-center ${dark ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-900'}`}>{React.cloneElement(icon, { size: 20 })}</div>
+    <p className={`text-[10px] font-black uppercase tracking-widest ${dark ? 'opacity-60' : 'text-slate-400'}`}>{title}</p>
     <div className="text-3xl font-black italic mt-2 tracking-tighter">{children}</div>
   </div>
 );
