@@ -110,6 +110,13 @@ const Caixa = ({ usuario, produtos = [], configLoja, avisar }) => {
 
   const finalizarVenda = async () => {
     if (carrinho.length === 0 || carregando) return;
+
+    // --- NOVA VALIDAÇÃO DE SEGURANÇA ---
+    if (!empresaId) {
+        avisar?.("ERRO: ID DA EMPRESA NÃO ENCONTRADO. Por favor, recarregue a página.", "erro");
+        return;
+    }
+    // -----------------------------------
     
     const docConfig = TIPOS_DOCUMENTOS.find(d => d.id === tipoDoc);
 
