@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebase';
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, limit, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { 
   Users, UserPlus, Trash2, Copy,
   UserCircle, Loader2, X, Lock
@@ -38,10 +38,11 @@ const Equipa = ({ usuario, avisar }) => {
       return;
     }
 
-    // A Query deve usar o campo que as suas regras protegem (empresaId)
+    // A Query inclui o limit(100) exigido pelas regras do Firestore
     const q = query(
       collection(db, "usuarios"),
-      where("empresaId", "==", idMestre)
+      where("empresaId", "==", idMestre),
+      limit(100)
     );
 
     // Usando a sintaxe de objeto no onSnapshot para evitar erros de callback
@@ -155,7 +156,7 @@ const Equipa = ({ usuario, avisar }) => {
         
         <button 
           onClick={() => setMostrarModal(true)}
-          className="bg-slate-900 text-white px-8 py-4 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-blue-600 transition-all shadow-xl shadow-slate-200 active:scale-95 group"
+          className="bg-slate-900 text-white px-8 py-4 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-blue-600 transition-all shadow-xl shadow-slate-200 active:scale-95 group cursor-pointer"
         >
           <UserPlus size={20} /> 
           <span className="uppercase tracking-widest text-xs">Novo Funcionário</span>
@@ -209,7 +210,7 @@ const Equipa = ({ usuario, avisar }) => {
               <div className="mt-6 pt-6 border-t border-slate-50">
                 <button 
                   onClick={() => removerMembro(membro.id, membro.nome)}
-                  className="w-full py-4 rounded-2xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                  className="w-full py-4 rounded-2xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest cursor-pointer"
                 >
                   <Trash2 size={14} /> Revogar Acesso
                 </button>
@@ -224,7 +225,7 @@ const Equipa = ({ usuario, avisar }) => {
           <div className="bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden">
             <div className="p-10 pb-6 flex justify-between items-center">
               <h2 className="text-2xl font-black text-slate-900 italic uppercase tracking-tighter">Novo Acesso</h2>
-              <button onClick={() => setMostrarModal(false)} className="text-slate-400 hover:text-red-500 transition-colors"><X size={24}/></button>
+              <button onClick={() => setMostrarModal(false)} className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer"><X size={24}/></button>
             </div>
 
             <form onSubmit={adicionarMembro} className="p-10 pt-0 space-y-5">
@@ -277,7 +278,7 @@ const Equipa = ({ usuario, avisar }) => {
               <button 
                 type="submit"
                 disabled={salvando} 
-                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black mt-4 flex items-center justify-center gap-3 hover:bg-blue-600 transition-all disabled:opacity-50 shadow-lg shadow-slate-200"
+                className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black mt-4 flex items-center justify-center gap-3 hover:bg-blue-600 transition-all disabled:opacity-50 shadow-lg shadow-slate-200 cursor-pointer"
               >
                 {salvando ? <Loader2 className="animate-spin" size={18} /> : "CONFIRMAR CREDENCIAIS"}
               </button>
