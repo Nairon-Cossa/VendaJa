@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { db } from '../firebase';
+import { db, firebaseConfig } from '../firebase';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { collection, query, where, limit, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { 
   Users, UserPlus, Trash2, Copy,
   UserCircle, Loader2, X, Lock
 } from 'lucide-react';
+
+// Instância secundária para criar utilizadores no Auth sem deslogar o Admin
+const secondaryApp = getApps().find(app => app.name === "SecondaryApp") || initializeApp(firebaseConfig, "SecondaryApp");
+const secondaryAuth = getAuth(secondaryApp);
 
 const Equipa = ({ usuario, avisar }) => {
   const [membros, setMembros] = useState([]);
@@ -20,7 +26,6 @@ const Equipa = ({ usuario, avisar }) => {
     role: 'caixa'
   });
 
-  // Função utilitária para evitar o erro "e is not a function"
   const safeAvisar = useCallback((msg, tipo) => {
     if (typeof avisar === 'function') {
       avisar(msg, tipo);
@@ -29,7 +34,6 @@ const Equipa = ({ usuario, avisar }) => {
     }
   }, [avisar]);
 
-  // 1. Carregar membros ligados a esta empresa/loja
   useEffect(() => {
     const idMestre = usuario?.empresaId || usuario?.uid;
     
@@ -38,21 +42,18 @@ const Equipa = ({ usuario, avisar }) => {
       return;
     }
 
-    // A Query inclui o limit(100) exigido pelas regras do Firestore
     const q = query(
       collection(db, "usuarios"),
       where("empresaId", "==", idMestre),
       limit(100)
     );
 
-    // Usando a sintaxe de objeto no onSnapshot para evitar erros de callback
     const unsubscribe = onSnapshot(q, {
       next: (snapshot) => {
         const lista = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        // Filtra para não mostrar o próprio usuário logado
         setMembros(lista.filter(m => m.email !== usuario.email));
         setCarregando(false);
       },
@@ -73,7 +74,6 @@ const Equipa = ({ usuario, avisar }) => {
     safeAvisar("SENHA COPIADA!", "sucesso");
   };
 
-  // 2. Função para Adicionar Membro
   const adicionarMembro = async (e) => {
     e.preventDefault();
     if (salvando) return;
@@ -83,7 +83,7 @@ const Equipa = ({ usuario, avisar }) => {
       const idMestre = usuario?.empresaId || usuario?.uid;
       const emailId = novoMembro.email.toLowerCase().trim();
 
-      // Verificar existência
+      // 1. Verificar se já existe no Firestore
       const docExistente = await getDoc(doc(db, "usuarios", emailId));
       if (docExistente.exists()) {
         safeAvisar("ESTE E-MAIL JÁ ESTÁ EM USO.", "erro");
@@ -91,7 +91,7 @@ const Equipa = ({ usuario, avisar }) => {
         return;
       }
 
-      // Validar limite de usuários no plano
+      // 2. Validar limite de utilizadores
       const donoRef = doc(db, "usuarios", idMestre);
       const donoSnap = await getDoc(donoRef);
       const limite = donoSnap.data()?.maxUsers || 1;
@@ -102,14 +102,22 @@ const Equipa = ({ usuario, avisar }) => {
         return;
       }
 
-      const idFunc = `FUNC_${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
-      
+      let newUid = `FUNC_${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+
+      // 3. Criar a conta no Firebase Auth (Auth Secundário)
+      try {
+        const userCred = await createUserWithEmailAndPassword(secondaryAuth, emailId, novoMembro.password);
+        newUid = userCred.user.uid;
+      } catch (authErr) {
+        console.warn("Aviso ao criar no Firebase Auth (Será usado registo manual):", authErr.message);
+      }
+
       const dadosFuncionario = {
-        uid: idFunc, 
+        uid: newUid, 
         nome: novoMembro.nome.trim(),
         email: emailId,
         telemovel: novoMembro.telemovel || '',
-        password: novoMembro.password || idFunc,
+        password: novoMembro.password,
         role: novoMembro.role || 'caixa',
         empresaId: idMestre, 
         lojaId: idMestre,
@@ -119,7 +127,11 @@ const Equipa = ({ usuario, avisar }) => {
         createdAt: new Date().toISOString()
       };
 
+      // Guarda no Firestore com ID do e-mail E com o UID do Auth para garantir retrocompatibilidade
       await setDoc(doc(db, "usuarios", emailId), dadosFuncionario);
+      if (newUid !== emailId) {
+        await setDoc(doc(db, "usuarios", newUid), dadosFuncionario);
+      }
       
       setMostrarModal(false);
       setNovoMembro({ nome: '', email: '', telemovel: '', password: '', role: 'caixa' });
@@ -127,7 +139,7 @@ const Equipa = ({ usuario, avisar }) => {
 
     } catch (error) {
       console.error("Erro ao criar membro:", error);
-      safeAvisar("ERRO DE PERMISSÃO OU REDE", "erro");
+      safeAvisar("ERRO AO CRIAR UTILIZADOR", "erro");
     } finally {
       setSalvando(false);
     }
@@ -233,7 +245,7 @@ const Equipa = ({ usuario, avisar }) => {
                 <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Nome Completo</label>
                 <input 
                   required 
-                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
                   value={novoMembro.nome} 
                   onChange={e => setNovoMembro({...novoMembro, nome: e.target.value})} 
                 />
@@ -244,7 +256,7 @@ const Equipa = ({ usuario, avisar }) => {
                 <input 
                   required 
                   type="email" 
-                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all" 
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all text-slate-900" 
                   value={novoMembro.email} 
                   onChange={e => setNovoMembro({...novoMembro, email: e.target.value})} 
                 />
@@ -255,7 +267,7 @@ const Equipa = ({ usuario, avisar }) => {
                 <div className="relative">
                   <input 
                     required 
-                    className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all pr-12" 
+                    className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none focus:bg-white border-2 border-transparent focus:border-blue-500 transition-all pr-12 text-slate-900" 
                     value={novoMembro.password} 
                     onChange={e => setNovoMembro({...novoMembro, password: e.target.value})} 
                   />
@@ -266,7 +278,7 @@ const Equipa = ({ usuario, avisar }) => {
               <div>
                 <label className="text-[9px] font-black uppercase text-slate-400 ml-4 mb-1 block">Nível de Permissão</label>
                 <select 
-                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500"
+                  className="w-full bg-slate-50 p-5 rounded-2xl font-bold outline-none border-2 border-transparent focus:border-blue-500 text-slate-900"
                   value={novoMembro.role} 
                   onChange={e => setNovoMembro({...novoMembro, role: e.target.value})}
                 >
