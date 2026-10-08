@@ -14,7 +14,7 @@ import {
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyBoaPP1CPioRE6K_ngs-lfUW4eDSaxGy6U",
   authDomain: "vendaja-d6356.firebaseapp.com",
   projectId: "vendaja-d6356",
@@ -26,11 +26,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Inicialização com Cache Persistente (Offline Support)
+// Inicialização com Cache Persistente + Long Polling (Evita o bloqueio do AdBlocker no WebSocket)
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
-  })
+  }),
+  experimentalForceLongPolling: true
 });
 
 export const auth = getAuth(app);
@@ -56,7 +57,6 @@ export const atualizarPlanoLoja = async (uid, planoNome, maxUsers) => {
 
 export const contarUsuariosLoja = async (empresaId) => {
   try {
-    // UPDATE: Agora filtramos por empresaId para contar todos os usuários vinculados à conta mestre
     const q = query(collection(db, "usuarios"), where("empresaId", "==", empresaId));
     const snapshot = await getDocs(q);
     return snapshot.size;
@@ -68,7 +68,6 @@ export const contarUsuariosLoja = async (empresaId) => {
 
 export const verificarDisponibilidadePlano = async (usuario) => {
   try {
-    // UPDATE: O limite de usuários sempre deve ser lido do documento do DONO (empresaId)
     const idMestre = usuario?.empresaId || usuario?.uid;
     const mestreDoc = await getDoc(doc(db, "usuarios", idMestre));
     
