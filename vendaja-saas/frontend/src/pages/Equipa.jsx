@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db, firebaseConfig } from '../firebase';
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { collection, query, where, limit, onSnapshot, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { 
+  collection, query, where, limit, onSnapshot, 
+  doc, setDoc, deleteDoc, getDoc, getDocs 
+} from 'firebase/firestore';
 import { 
   Users, UserPlus, Trash2, Copy,
   UserCircle, Loader2, X, Lock
 } from 'lucide-react';
 
-// Instância secundária para criar utilizadores no Auth sem deslogar o Admin
+// Instância secundária do Firebase para registar o utilizador no Auth sem deslogar o Admin
 const secondaryApp = getApps().find(app => app.name === "SecondaryApp") || initializeApp(firebaseConfig, "SecondaryApp");
 const secondaryAuth = getAuth(secondaryApp);
 
@@ -34,6 +37,7 @@ const Equipa = ({ usuario, avisar }) => {
     }
   }, [avisar]);
 
+  // 1. Carregar membros ligados a esta empresa/loja
   useEffect(() => {
     const idMestre = usuario?.empresaId || usuario?.uid;
     
@@ -54,6 +58,7 @@ const Equipa = ({ usuario, avisar }) => {
           id: doc.id,
           ...doc.data()
         }));
+        // Filtra para não mostrar o próprio utilizador logado
         setMembros(lista.filter(m => m.email !== usuario.email));
         setCarregando(false);
       },
@@ -74,6 +79,7 @@ const Equipa = ({ usuario, avisar }) => {
     safeAvisar("SENHA COPIADA!", "sucesso");
   };
 
+  // 2. Adicionar Novo Funcionário
   const adicionarMembro = async (e) => {
     e.preventDefault();
     if (salvando) return;
@@ -83,7 +89,7 @@ const Equipa = ({ usuario, avisar }) => {
       const idMestre = usuario?.empresaId || usuario?.uid;
       const emailId = novoMembro.email.toLowerCase().trim();
 
-      // 1. Verificar se já existe no Firestore
+      // Verificar se o e-mail já existe por ID do documento
       const docExistente = await getDoc(doc(db, "usuarios", emailId));
       if (docExistente.exists()) {
         safeAvisar("ESTE E-MAIL JÁ ESTÁ EM USO.", "erro");
@@ -91,7 +97,16 @@ const Equipa = ({ usuario, avisar }) => {
         return;
       }
 
-      // 2. Validar limite de utilizadores
+      // Verificar se o e-mail já existe por campo email na coleção
+      const qEmail = query(collection(db, "usuarios"), where("email", "==", emailId));
+      const snapEmail = await getDocs(qEmail);
+      if (!snapEmail.empty) {
+        safeAvisar("ESTE E-MAIL JÁ ESTÁ EM USO.", "erro");
+        setSalvando(false);
+        return;
+      }
+
+      // Validar limite do plano
       const donoRef = doc(db, "usuarios", idMestre);
       const donoSnap = await getDoc(donoRef);
       const limite = donoSnap.data()?.maxUsers || 1;
@@ -102,14 +117,14 @@ const Equipa = ({ usuario, avisar }) => {
         return;
       }
 
-      let newUid = `FUNC_${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+      let newUid = emailId;
 
-      // 3. Criar a conta no Firebase Auth (Auth Secundário)
+      // Criar conta no Firebase Auth via Instância Secundária
       try {
         const userCred = await createUserWithEmailAndPassword(secondaryAuth, emailId, novoMembro.password);
         newUid = userCred.user.uid;
       } catch (authErr) {
-        console.warn("Aviso ao criar no Firebase Auth (Será usado registo manual):", authErr.message);
+        console.warn("Aviso ao criar no Firebase Auth (usando ID por e-mail):", authErr.message);
       }
 
       const dadosFuncionario = {
@@ -127,11 +142,8 @@ const Equipa = ({ usuario, avisar }) => {
         createdAt: new Date().toISOString()
       };
 
-      // Guarda no Firestore com ID do e-mail E com o UID do Auth para garantir retrocompatibilidade
-      await setDoc(doc(db, "usuarios", emailId), dadosFuncionario);
-      if (newUid !== emailId) {
-        await setDoc(doc(db, "usuarios", newUid), dadosFuncionario);
-      }
+      // GUARDA APENAS 1 ÚNICO DOCUMENTO NO FIRESTORE
+      await setDoc(doc(db, "usuarios", newUid), dadosFuncionario);
       
       setMostrarModal(false);
       setNovoMembro({ nome: '', email: '', telemovel: '', password: '', role: 'caixa' });
