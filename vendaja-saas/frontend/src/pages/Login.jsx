@@ -27,13 +27,14 @@ const Login = ({ aoLogar }) => {
     try {
       /* ============================================================
          1. TENTATIVA AUTH FIREBASE (Donos / Master Admin)
-         Utiliza o UID para buscar o documento do usuário.
+         Tenta autenticar no Firebase Auth. Se falhar, passa
+         suavemente para a verificação de funcionários no Firestore.
       ============================================================ */
       try {
         const userCredential = await signInWithEmailAndPassword(auth, emailLimpo, password);
         const user = userCredential.user;
 
-        // BYPASS SUPER ADMIN (Teu email de desenvolvedor)
+        // BYPASS SUPER ADMIN (Email de desenvolvedor)
         if (user.email?.toLowerCase() === "naironcossa.dev@gmail.com") {
           const sessaoMaster = {
             uid: user.uid,
@@ -49,7 +50,7 @@ const Login = ({ aoLogar }) => {
           return;
         }
 
-        // BUSCA PELO UID (Como definido no teu Registo.jsx)
+        // BUSCA PELO UID (Para contas registadas no Firebase Auth)
         const donoSnap = await getDoc(doc(db, "usuarios", user.uid));
         
         if (donoSnap.exists()) {
@@ -70,19 +71,13 @@ const Login = ({ aoLogar }) => {
           return;
         } 
       } catch (authErr) {
-        // Se a senha estiver errada para um email que existe no Auth, paramos aqui
-        if (authErr.code === 'auth/wrong-password') {
-           setErro("CHAVE DE ACESSO INCORRETA.");
-           setCarregando(false);
-           return;
-        }
-        // Se o erro for 'user-not-found', o código continua para tentar o fluxo de funcionário
-        console.log("Conta Auth não encontrada ou erro, tentando base manual de funcionários...");
+        // Log interno: Não trava o fluxo se for funcionário cadastrado apenas no Firestore
+        console.log("Firebase Auth não concluiu. Tentando base de funcionários no Firestore...");
       }
 
       /* ============================================================
          2. FLUXO DE FUNCIONÁRIO (Busca por Documento ID = Email)
-         Para quem não tem conta no Auth mas existe no Firestore.
+         Para funcionários criados via painel (sem conta no Firebase Auth).
       ============================================================ */
       const docRef = doc(db, "usuarios", emailLimpo);
       const docSnap = await getDoc(docRef);
@@ -90,6 +85,7 @@ const Login = ({ aoLogar }) => {
       if (docSnap.exists()) {
         const dadosUsuario = docSnap.data();
 
+        // Validação da senha guardada no Firestore
         if (dadosUsuario.password === password) {
           if (dadosUsuario.status === 'suspenso') {
             setErro("ACESSO SUSPENSO PELO ADMINISTRADOR.");
@@ -106,6 +102,7 @@ const Login = ({ aoLogar }) => {
         }
       }
 
+      // Se não autenticou no Auth nem na base manual de funcionários
       setErro("E-MAIL OU CHAVE DE ACESSO INCORRETOS.");
 
     } catch (err) {
@@ -190,7 +187,7 @@ const Login = ({ aoLogar }) => {
                 <button
                   type="button"
                   onClick={() => setVerSenha(!verSenha)}
-                  className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-500 transition-colors"
+                  className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-500 transition-colors cursor-pointer"
                 >
                   {verSenha ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -200,7 +197,7 @@ const Login = ({ aoLogar }) => {
             {/* BOTÃO DE SUBMIT */}
             <button
               disabled={carregando}
-              className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black flex justify-center items-center gap-3 disabled:opacity-50 hover:bg-blue-600 transition-all active:scale-95 shadow-xl shadow-slate-200"
+              className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black flex justify-center items-center gap-3 disabled:opacity-50 hover:bg-blue-600 transition-all active:scale-95 shadow-xl shadow-slate-200 cursor-pointer"
             >
               {carregando ? (
                 <Loader2 className="animate-spin" size={20} />
